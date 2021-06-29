@@ -2,8 +2,6 @@
 title: Bayes workshop
 author: Kusti Skytén
 date:
-options:
-  out_path: out
 ---
 
 <!-- ## Setup -->
@@ -82,7 +80,7 @@ load the data and see what the structure is:
 
 ```julia
 using Dates
-pest_data = Feather.read("../data/pest_data.feather")
+pest_data = Feather.read(joinpath(@__DIR__, "../../../data/pest_data.feather"))
 pest_data.date = convert.(Date, pest_data.date)
 ```
 
