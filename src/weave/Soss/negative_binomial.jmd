@@ -1,0 +1,89 @@
+## Modeling count data with the Negative Binomial
+
+When we considered modelling the data using a Poisson, we saw that the model didn't appear to fit as well to the data as we would like. In particular the model underpredicted low and high numbers of complaints, and overpredicted the medium number of complaints. This is one indication of over-dispersion, where the variance is larger than the mean. A Poisson model doesn't fit over-dispersed count data very well because the same parameter $\lambda$, controls both the expected counts and the variance of these counts. The natural alternative to this is the negative binomial model:
+
+$$
+\begin{align*} \text{complaints}*{b,t} & \sim \text{Neg-Binomial}(\lambda*{b,t}, \phi) \
+\lambda*{b,t} & = \exp{(\eta*{b,t})} \
+\eta*{b,t} &= \alpha + \beta \, {\rm traps}*{b,t} + \beta*{\rm super} \, {\rm super}*{b} + \text{log*sq*foot}_{b} \end{align*}
+$$
+
+In Stan the negative binomial mass function we'll use is called  $\texttt{neg_binomial_2_log}(\text{ints} \, y, \text{reals} \, \eta, \text{reals} \, \phi)$  in Stan. Like the `poisson_log` function, this negative binomial mass function that is parameterized in terms of its log-mean, $\eta$, but it also has a precision $\phi$ such that
+
+$$
+\mathbb{E}[y] \, = \lambda = \exp(\eta)
+$$
+
+$$
+\text{Var}[y] = \lambda + \lambda^2/\phi = \exp(\eta) + \exp(\eta)^2 / \phi.
+$$
+
+
+As $\phi$ gets larger the term $\lambda^2 / \phi$ approaches zero and so  the variance of the negative-binomial approaches $\lambda$, i.e., the negative-binomial gets closer and closer to the Poisson.
+
+### Fake data fit: Multiple NB regression
+
+We're going to generate one draw from the fake data model so we can use the data to fit our model and compare the known values of the parameters to the posterior density of the parameters.
+
+Create a dataset to feed into the model.
+
+Now we run our NB regression over the fake data and extract the samples to examine posterior predictive checks and to check whether we've sufficiently recovered our known parameters, $\text{alpha}$ $\texttt{beta}$, .
+
+```julia
+
+```
+
+Construct the vector of true values from your simulated dataset and compare to the recovered parameters.
+
+```julia
+
+```
+
+### Fit to real data and check the fit
+
+```julia
+
+```
+
+Let's look at our predictions vs. the data.
+
+```julia
+
+
+```
+
+It appears that our model now captures both the number of small counts better as well as the tails.
+
+Let's check if the negative binomial model does a better job capturing the number of zeros:
+
+```julia
+
+```
+
+These look OK, but let's look at the standardized residual plot.
+
+```julia
+
+```
+
+Looks OK, but we still have some very large *standardized* residuals. This might be because we are currently ignoring that the data are clustered by buildings, and that the probability of roach issue may vary substantially across buildings.
+
+```julia
+
+```
+
+The rootogram now looks much more plausible. We can tell this because now the expected number of complaints matches much closer to the observed number of complaints. However, we still have some larger counts that appear to be outliers for the model.
+
+Check predictions by number of traps:
+
+```julia
+
+```
+
+We haven't used the fact that the data are clustered by building yet. A posterior  predictive check might elucidate whether it would be a good idea to add the building information into the model.
+
+```julia
+
+```
+
+We're getting plausible predictions for most building means but some are estimated better than others and some have larger uncertainties than we might expect. If we explicitly model the variation across buildings we may be able to get much better estimates.

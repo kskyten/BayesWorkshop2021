@@ -1,0 +1,236 @@
+## Hierarchical modeling
+
+### Modeling varying intercepts for each building
+
+Let's add a hierarchical intercept parameter, $\alpha_b$ at the building level to our model.
+
+$$
+\text{complaints}*{b,t} \sim \text{Neg-Binomial}(\lambda*{b,t}, \phi) \
+\lambda*{b,t}  = \exp{(\eta*{b,t})} \
+\eta*{b,t} = \mu*b + \beta \, {\rm traps}*{b,t} + \beta*{\rm super}\, {\rm super}*b + \text{log*sq*foot}*b \
+\mu*b \sim \text{Normal}(\alpha, \sigma*{\mu})
+$$
+
+In our Stan model, $\mu_b$ is the $b$-th element of the vector $\texttt{mu}$ which has one element per building.
+
+One of our predictors varies only by building, so we can rewrite the above model more efficiently like so:
+
+$$
+\eta*{b,t} = \mu*b + \beta \, {\rm traps}*{b,t} + \text{log*sq*foot}*b\
+\mu*b \sim \text{Normal}(\alpha +  \beta*{\text{super}} \, \text{super}*b , \sigma*{\mu})
+$$
+
+We have more information at the building level as well, like the average age of the residents, the average age of the buildings, and the average per-apartment monthly rent so we can add that data into a matrix called `building_data`, which will have one row per building and four columns:
+
+  * `live_in_super`
+  * `age_of_building`
+  * `average_tentant_age`
+  * `monthly_average_rent`
+
+We'll write the Stan model like:
+
+$$
+\eta*{b,t} = \alpha*b + \beta \, {\rm traps} + \text{log*sq*foot}\
+\mu \sim \text{Normal}(\alpha + \texttt{building*data} \, \zeta, \,\sigma*{\mu})
+$$
+
+### Prepare building data for hierarchical
+
+We'll need to do some more data prep before we can fit our models. Firstly to use the building variable in Stan we will need to transform it from a factor variable to an integer variable.
+
+```julia
+
+
+```
+
+### Fit the hierarchical model
+
+Fit the model to data.
+
+```julia
+
+```
+
+### Diagnostics
+
+We get a bunch of warnings from Stan about divergent transitions, which is an indication that there may be regions of the posterior that have not been explored by the Markov chains.
+
+Divergences are discussed in more detail in the course slides as well as the **bayesplot** (MCMC diagnostics vignette)[http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html] and [*A Conceptual Introduction to Hamiltonian Monte Carlo*](https://arxiv.org/abs/1701.02434).
+
+In this example we will see that we have divergent transitions because we need to reparameterize our model - i.e., we will retain the overall structure of the model, but transform some of the parameters so that it is easier for Stan to sample from the parameter space. Before we go through exactly how to do this reparameterization, we will first go through what indicates that this is something that reparameterization will resolve. We will go through:
+
+1. Examining the fitted parameter values, including the effective sample size
+2. Traceplots and scatterplots that reveal particular patterns in locations of the divergences.
+
+First let's extract the fits from the model.
+
+```julia
+
+```
+
+Then we print the fits for the parameters that are of most interest.
+
+```julia
+
+
+```
+
+You can see that the effective samples are quite low for many of the parameters relative to the total number of samples. This alone isn't indicative of the need to reparameterize, but it indicates that we should look further at the trace plots and pairs plots. First let's look at the traceplots to see if the divergent transitions form a pattern.
+
+```julia
+
+```
+
+Looks as if the divergent parameters, the little red bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
+
+```julia
+
+```
+
+What we have here is a cloud-like shape, with most of the divergences clustering towards the bottom. We'll see a bit later that we actually want this to look more like a funnel than a cloud, but the divergences are indicating that the sampler can't explore the narrowing neck of the funnel.
+
+One way to see why we should expect some version of a funnel is to look at some simulations from the prior, which we can do without MCMC and thus with no risk of sampling problems:
+
+```julia
+
+```
+
+Of course, if the data is at all informative we shouldn't expect the posterior to look exactly like the prior. But unless the data is incredibly informative about the parameters and the posterior concentrates away from the narrow neck of the funnel, the sampler is going to have to confront the funnel geometry. (See the [Visual MCMC Diagnostics](http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html) vignette for more on this.)
+
+Another way to look at the divergences is via a parallel coordinates plot:
+
+```julia
+
+
+```
+
+Again, we see evidence that our problems concentrate when $\texttt{sigma_mu}$ is small.
+
+### Reparameterize and recheck diagnostics
+
+Instead, we should use the non-centered parameterization for $\mu_b$. We define a vector of auxiliary variables in the parameters block, $\texttt{mu_raw}$ that is given a $\text{Normal}(0, 1)$ prior in the model block. We then make $\texttt{mu}$ a transformed parameter: We can reparameterize the random intercept $\mu_b$, which is distributed:
+
+$$
+\mu*b \sim \text{Normal}(\alpha + \texttt{building*data} \, \zeta, \sigma_{\mu})
+$$
+
+```
+transformed parameters {
+  vector[J] mu;
+  mu = alpha + building_data * zeta + sigma_mu * mu_raw;
+}
+```
+
+This gives $\texttt{mu}$ a $\text{Normal}(\alpha + \texttt{building_data}\, \zeta, \sigma_\mu)$ distribution, but it decouples the dependence of the density of each element of $\texttt{mu}$ from $\texttt{sigma_mu}$ ($\sigma_\mu$). hier*NB*regression_ncp.stan uses the non-centered parameterization for $\texttt{mu}$. We will examine the effective sample size of the fitted model to see whether we've fixed the problem with our reparameterization.
+
+Fit the model to the data.
+
+```julia
+
+```
+
+Examining the fit of the new model
+
+```julia
+
+```
+
+This has improved the effective sample sizes of $\texttt{mu}$. We extract the parameters to run our usual posterior predictive checks.
+
+```julia
+
+```
+
+```julia
+
+```
+
+```julia
+
+```
+
+The marginal plot, again.
+
+```julia
+
+```
+
+This looks quite nice. If we've captured the building-level means well, then the posterior distribution of means by building should match well with the observed means of the quantity of building complaints by month.
+
+```julia
+
+```
+
+We weren't doing terribly with the building-specific means before, but now they are all well-captured by our model. The model is also able to do a decent job estimating within-building variability:
+
+```julia
+
+
+```
+
+Predictions by number of traps:
+
+```julia
+
+```
+
+Standardized residuals:
+
+```julia
+
+```
+
+Rootogram:
+
+```julia
+
+
+```
+
+### Varying intercepts *and* varying slopes
+
+We've gotten some new data that extends the number of time points for which we have observations for each building. This will let us explore how to expand the model a bit more with varying *slopes* in addition to the varying intercepts and also, later, also model temporal variation.
+
+```julia
+
+R"""
+stan_dat_hier <- readRDS('data/pest_data_longer_stan_dat.RDS')
+"""
+
+```
+
+Perhaps if the levels of complaints differ by building, the coefficient for the effect of traps on building does too. We can add this to our model and observe the fit.
+
+$$
+\text{complaints}*{b,t} \sim \text{Neg-Binomial}(\lambda*{b,t}, \phi)  \
+\lambda*{b,t} = \exp{(\eta*{b,t})}\
+\eta*{b,t} = \mu*b + \kappa*b \, \texttt{traps}*{b,t} + \text{log*sq*foot}*b \
+\mu*b \sim \text{Normal}(\alpha + \texttt{building*data} \, \zeta, \sigma*{\mu}) \
+\kappa*b \sim \text{Normal}(\beta + \texttt{building*data} \, \gamma, \sigma_{\kappa})
+$$
+
+Fit the model to data and extract the posterior draws needed for our posterior predictive checks.
+
+```julia
+
+```
+
+To see if the model infers building-to-building differences in, we can plot a histogram of our marginal posterior distribution for `sigma_kappa`.
+
+```julia
+
+```
+
+```julia
+
+```
+
+```julia
+
+```
+
+While the model can't specifically rule out zero from the posterior, it does have mass at small non-zero numbers, so we should leave in the hierarchy over $\texttt{kappa}$. Plotting the marginal data density again, we can see the model still looks well calibrated.
+
+```julia
+
+```

@@ -1,0 +1,81 @@
+## Expanding the model: multiple predictors
+
+Modeling the relationship between complaints and bait stations is the simplest  model. We can expand the model, however, in a few ways that will be beneficial  for our client. Moreover, the manager has told us that they expect there are a number of other reasons that one building might have more roach complaints than another.
+
+### Interpretability
+
+Currently, our model's mean parameter is a rate of complaints per 30 days, but we're modeling a process that occurs over an area as well as over time. We have the square footage of each building, so if we add that information into the model, we can interpret our parameters as a rate of complaints per square foot per 30 days.
+
+$$
+\begin{align*} \textrm{complaints}*{b,t} & \sim \textrm{Poisson}(\textrm{sq*foot}*b\,\lambda*{b,t}) \
+\lambda*{b,t} & = \exp{(\eta*{b,t} )} \
+\eta*{b,t} &= \alpha + \beta \, \textrm{traps}*{b,t} \end{align*}
+$$
+
+The term $\text{sq_foot}$ is called an exposure term. If we log the term, we can  put it in $\eta_{b,t}$:
+
+$$
+\begin{align*} \textrm{complaints}*{b,t} & \sim \textrm{Poisson}(\lambda*{b,t}) \
+\lambda*{b,t} & = \exp{(\eta*{b,t} )} \
+\eta*{b,t} &= \alpha + \beta \, \textrm{traps}*{b,t} + \textrm{log*sq*foot}_b \end{align*}
+$$
+
+A quick test shows us that there appears to be a relationship between the square footage of the building and the number of complaints received:
+
+```julia
+
+R"""
+ggplot(pest_data, aes(x = log(total_sq_foot), y = log1p(complaints))) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+"""
+
+```
+
+Using the property manager's intuition, we include two extra pieces of information we know about the building - the (log of the) square floor space and whether there is a live in super or not - into both the simulated and real data.
+
+```julia
+
+R"""
+stan_dat_simple$log_sq_foot <- log(pest_data$total_sq_foot/1e4)
+stan_dat_simple$live_in_super <- pest_data$live_in_super
+"""
+```
+
+### Simulate fake data with multiple predictors
+
+
+And then fit the model we wrote for the multiple regression.
+
+```julia
+```
+
+Then compare these parameters to the true parameters:
+
+```julia
+
+```
+
+We've recovered the parameters sufficiently well, so we've probably coded the model correctly and we're ready to fit the real data.
+
+### Fit the real data
+
+Now let's use the real data and explore the fit.
+
+```julia
+```
+
+This again looks like we haven't captured the smaller counts very well, nor have we captured the larger counts.
+
+```julia
+```
+
+We're still severely underestimating the proportion of zeros in the data. Ideally this vertical line would fall somewhere within the histogram.
+
+We can also plot uncertainty intervals for the predicted complaints for different numbers of traps.
+
+```julia
+
+```
+
+We can see that we've increased the tails a bit more at the larger numbers of traps but we still have some large observed numbers of complaints that the model would consider extremely unlikely events.
