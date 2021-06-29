@@ -1,3 +1,21 @@
+```julia
+using RCall
+
+R"""
+library(rstan)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(bayesplot)
+
+theme_set(bayesplot::theme_default())
+
+# seed for R's pseudo-RNGs, not Stan's
+set.seed(1123)
+"""
+
+```
+
 ## Modeling count data with the Negative Binomial
 
 When we considered modelling the data using a Poisson, we saw that the model didn't appear to fit as well to the data as we would like. In particular the model underpredicted low and high numbers of complaints, and overpredicted the medium number of complaints. This is one indication of over-dispersion, where the variance is larger than the mean. A Poisson model doesn't fit over-dispersed count data very well because the same parameter $\lambda$, controls both the expected counts and the variance of these counts. The natural alternative to this is the negative binomial model:
@@ -30,7 +48,7 @@ As $\phi$ gets larger the term $\lambda^2 / \phi$ approaches zero and so  the va
 ```julia
 
 R"""
-comp_dgp_multiple_NB <- stan_model('stan_programs/multiple_NB_regression_dgp.stan')
+comp_dgp_multiple_NB <- stan_model('src/stan/multiple_NB_regression_dgp.stan')
 """
 
 ```
@@ -76,7 +94,7 @@ Compile the inferential model.
 ```julia
 
 R"""
-comp_model_NB <- stan_model('stan_programs/multiple_NB_regression.stan')
+comp_model_NB <- stan_model('src/stan/multiple_NB_regression.stan')
 """
 
 ```

@@ -1,3 +1,22 @@
+```julia
+cd(joinpath(@__DIR__, "../../.."))
+using RCall
+
+R"""
+library(rstan)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(bayesplot)
+
+theme_set(bayesplot::theme_default())
+
+# seed for R's pseudo-RNGs, not Stan's
+set.seed(1123)
+"""
+
+```
+
 ## Expanding the model: multiple predictors
 
 Modeling the relationship between complaints and bait stations is the simplest  model. We can expand the model, however, in a few ways that will be beneficial  for our client. Moreover, the manager has told us that they expect there are a number of other reasons that one building might have more roach complaints than another.
@@ -54,7 +73,7 @@ Now we need a new Stan model that uses multiple predictors.
 ```julia
 
 R"""
-comp_dgp_multiple <- stan_model('stan_programs/multiple_poisson_regression_dgp.stan')
+comp_dgp_multiple <- stan_model('src/stan/multiple_poisson_regression_dgp.stan')
 """
 
 ```
@@ -98,7 +117,7 @@ And then compile and fit the model we wrote for the multiple regression.
 ```julia
 
 R"""
-comp_model_P_mult <- stan_model('stan_programs/multiple_poisson_regression.stan')
+comp_model_P_mult <- stan_model('src/stan/multiple_poisson_regression.stan')
 fit_model_P_mult <- sampling(comp_model_P_mult, data = stan_dat_fake, chains = 4, cores = 4)
 """
 

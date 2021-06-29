@@ -1,3 +1,22 @@
+```julia
+cd(joinpath(@__DIR__, "../../.."))
+using RCall
+
+R"""
+library(rstan)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(bayesplot)
+
+theme_set(bayesplot::theme_default())
+
+# seed for R's pseudo-RNGs, not Stan's
+set.seed(1123)
+"""
+
+```
+
 ## Hierarchical modeling
 
 ### Modeling varying intercepts for each building
@@ -101,7 +120,7 @@ Let's compile the model.
 ```julia
 
 R"""
-comp_model_NB_hier <- stan_model('stan_programs/hier_NB_regression.stan')
+comp_model_NB_hier <- stan_model('src/stan/hier_NB_regression.stan')
 """
 
 ```
@@ -246,7 +265,7 @@ Compile the model.
 ```julia
 
 R"""
-comp_model_NB_hier_ncp <- stan_model('stan_programs/hier_NB_regression_ncp.stan')
+comp_model_NB_hier_ncp <- stan_model('src/stan/hier_NB_regression_ncp.stan')
 """
 
 ```
@@ -417,7 +436,7 @@ Let's compile the model.
 ```julia
 
 R"""
-comp_model_NB_hier_slopes <- stan_model('stan_programs/hier_NB_regression_ncp_slopes_mod.stan')
+comp_model_NB_hier_slopes <- stan_model('src/stan/hier_NB_regression_ncp_slopes_mod.stan')
 """
 
 ```

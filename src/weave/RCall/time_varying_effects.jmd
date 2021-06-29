@@ -1,3 +1,22 @@
+```julia
+cd(joinpath(@__DIR__, "../../.."))
+using RCall
+
+R"""
+library(rstan)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(bayesplot)
+
+theme_set(bayesplot::theme_default())
+
+# seed for R's pseudo-RNGs, not Stan's
+set.seed(1123)
+"""
+
+```
+
 ## Time varying effects and structured priors
 
 We haven't looked at how cockroach complaints change over time. Let's look at whether there's any pattern over time.
@@ -88,7 +107,7 @@ $$
 ```julia
 
 R"""
-comp_model_NB_hier_mos <- stan_model('stan_programs/hier_NB_regression_ncp_slopes_mod_mos.stan')
+comp_model_NB_hier_mos <- stan_model('src/stan/hier_NB_regression_ncp_slopes_mod_mos.stan')
 """
 
 ```
@@ -194,7 +213,7 @@ Our model seems to be fitting well, so now we will go ahead and use the model to
 ```julia
 
 R"""
-comp_rev <- stan_model('stan_programs/hier_NB_regression_ncp_slopes_mod_mos_predict.stan')
+comp_rev <- stan_model('src/stan/hier_NB_regression_ncp_slopes_mod_mos_predict.stan')
 print(comp_rev)
 """
 
@@ -368,7 +387,7 @@ $$
 \rho^2 & \rho & 1 \end{bmatrix}
 $$
 
-This should generalize to higher dimensions pretty easily. We could replace the Stan code in lines 59 to 63 in `stan_programs/hier_NB_regression_ncp_slopes_mod_mos.stan` with the following:
+This should generalize to higher dimensions pretty easily. We could replace the Stan code in lines 59 to 63 in `src/stan/hier_NB_regression_ncp_slopes_mod_mos.stan` with the following:
 
 ```
 vector[M] mo;
@@ -425,7 +444,7 @@ $$
 \text{Cov}(\texttt{mo}*{t+h},\texttt{mo}*{t}) = \rho^h \, \text{Cov}(\texttt{mo}*{t},\texttt{mo}*{t}) \
 \text{Cov}(\texttt{mo}*{t+h},\texttt{mo}*{t}) = \rho^h \, \sigma_\texttt{mo}^2/(1 - \rho^2) \
 $$
-Writing this in Stan code to replace lines 59 to 63 in `stan_programs/hier_NB_regression_ncp_slopes_mod_mos.stan` we would get:
+Writing this in Stan code to replace lines 59 to 63 in `src/stan/hier_NB_regression_ncp_slopes_mod_mos.stan` we would get:
 
 ```
 vector[M] mo;
@@ -494,7 +513,7 @@ $$
 ```julia
 
 R"""
-comp_model_NB_hier_gp <- stan_model('stan_programs/hier_NB_regression_ncp_slopes_mod_mos_gp.stan')
+comp_model_NB_hier_gp <- stan_model('src/stan/hier_NB_regression_ncp_slopes_mod_mos_gp.stan')
 """
 
 ```
