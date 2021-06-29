@@ -41,11 +41,33 @@ As the property manager has complete control over the number of traps set, the r
 The data provided to us is in a file called `pest_data.RDS`. Let's load the data and see what the structure is:
 
 ```julia
+cd(joinpath(@__DIR__, "../../.."))
+using RCall
 
 R"""
-pest_data <- readRDS('data/pest_data.RDS')
+library(rstan)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(bayesplot)
+
+theme_set(bayesplot::theme_default())
+
+# seed for R's pseudo-RNGs, not Stan's
+set.seed(1123)
+"""
+
+```
+```julia
+R"""
+pest_data <- readRDS('data/pest_data.rds')
 str(pest_data)
 """
+
+using RData
+using FileIO
+
+pest_data = load(File(format"RDataSingle", "data/pest_data.rds"));
 
 ```
 
@@ -76,15 +98,19 @@ N_buildings
 And make some plots of the raw data:
 
 ```julia
+@rlibrary ggplot2
 
-R"""
-ggplot(pest_data, aes(x = complaints)) +
+ggplot(pest_data, aes(x = :complaints)) +
   geom_bar()
+# R"""
+# ggplot(pest_data, aes(x = complaints)) +
+#   geom_bar()
 
-ggplot(pest_data, aes(x = traps, y = complaints, color = live_in_super == TRUE)) +
-  geom_jitter()
-"""
+# """
 
+```
+```julia
+ggplot(pest_data, aes(x = :traps, y = :complaints, color = :live_in_super == true)) + geom_jitter()
 ```
 
 ```julia
@@ -144,7 +170,7 @@ First we will compile the Stan program (`simple_poisson_regression_dgp.stan`) th
 ```julia
 
 R"""
-comp_dgp_simple <- stan_model('stan_programs/simple_poisson_regression_dgp.stan')
+comp_dgp_simple <- stan_model('src/stan/simple_poisson_regression_dgp.stan')
 """
 
 ```
@@ -203,7 +229,7 @@ Now that we have the simulated data we fit the model to see if we can recover th
 ```julia
 
 R"""
-comp_model_P <- stan_model('stan_programs/simple_poisson_regression.stan')
+comp_model_P <- stan_model('src/stan/simple_poisson_regression.stan')
 fit_model_P <- sampling(comp_model_P, data = stan_dat_fake, seed = 123)
 
 posterior_alpha_beta <- as.matrix(fit_model_P, pars = c('alpha','beta'))
