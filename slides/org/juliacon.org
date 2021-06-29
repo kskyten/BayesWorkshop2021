@@ -1,0 +1,90 @@
+#+TITLE: Juliacon
+
+* Why Julia?
+** The n-language problem
+Stan: OCaml parsing a DSL generating C++ code used from R or Python
+Edward: Python on top of Tensorflow with a C++ backend
+** Modularity
+*** Use the right tool (person) for the job
+*** Building blocks of Bayesian data analysis
+**** Automatic differentiation
+***** Naural network frameworks have different priorities
+Focus on predictive performance, throughput and speed instead of numerical accuracy
+Added complexity due to industrial machine learning needs for NNs
+***** The cost of convenience
+***** Stan math library: AD for statisticians
+***** Julia
+****** Multiple interchangeable AD packages
+****** Attempts to bring AD as an integral part of the language:
+******* Success story: DiffEqFlux
+***** Jax, Swift
+**** Parameter transformation
+**** Hamiltonian MCMC
+***** Most Bayesian inference solution outside of Julia are frameworks
+The sampler is coupled with other components of the system.
+What if you want to understand the implementation?
+What if you want to modify or use the sampler outside of the framework?
+How easy is it to replace a sampler with an improved implemetation?
+**** Diagnostics
+Mostly plotting
+** Competitive advantages
+*** ODEs, Scientific ML
+*** Evaluating your posterior density on the GPU, in parallel
+*** Sparse arrays
+*** Researcher developing new methodology
+**** Simulator inference
+* Principled Bayesian workflow
+* Workflow
+** Exploratory data analysis
+*** Come up with plausible explanations of the data of increasing complexity
+*** Modeling loop, new models are informed by analysis of previous modeks
+** Prior predictive checking
+*** Historically prior distributions have been treated separately from the likelihood
+**** Objective priors, prior elicitation...
+**** Vast literature on the treatment of priors
+*** What are the implications of our generative model?
+**** Deciding numeric values of the hyperparameters is difficult without context
+**** Prior predictive checks are used to ensure the models are sensible
+** Model fitting and algorithm diagnostics
+*** How does data improve our model?
+*** Is our model a good representation wrt. to the goals of out analysis?
+*** Is our inference algorithm performing correctly?
+*** Explain Hamiltonian MCMC intuition
+*** Interpretation of diagnostics
+**** Divergence plots
+**** Trace plots
+** Posterior predictive checking
+*** What does our fitted generative model imply?
+*** Idea: generate data sets from our fitted generative model and compare it against the data.
+**** Continuous response
+**** Discrete response
+* Computing means
+The main challenge of Bayesian inference is computing means
+\[
+    \int f(x)p(x) \, dx
+\]
+** How to do it efficiently?
+Try to explore regions that contribute most to the mean
+*** First idea: go for high density
+Unintuitive behaviour in high dimensions
+High density regions do not necesserily contribute much mass
+*** How to find the regions that contribute the most to the mean?
+Exploit our knowledge about the gradient of the posterior
+Hamiltonian MCMC
+** How to make sure the results are sensible?
+Hamiltonian MCMC is designed to fail in problematic regions
+* Bayesian inference in Julia
+** A rich ecosystem of packages, can be overwhelming
+** Target audiences
+*** Non-experts: Tuing, Soss, Stan
+These packages all have a modeling DSL
+*** ODEs: DiffEqBayes
+*** Expert users, Learning, Performance: AD package, DynamicHMC, AdvancedHMC, ProbabilityModels.jl
+Need to do something that's not covered by the above?
+Build your own inference from building blocks.
+*** Researchers, Algorithm and library developers: Gen.jl
+** Two schools of Bayesian inference
+*** Statistical community
+**** Stan, Turing, Soss
+*** Artificial intelligence, Universal PPL
+**** Gen.jl, Omega.jl

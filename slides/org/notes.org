@@ -1,0 +1,118 @@
+#+TITLE: Notes
+
+* Conversion
+** Wrap R code in RCalls and create a new codeblock for julia
+** Add header counters
+** Split level 2 headers into separate chapters
+** Generate an index
+** Generate exercise templates
+* Rendering
+** Select an implementation (RCall, Turing, Soss)
+** exercises
+*** en
+**** Soss
+***** exc_01_01.jl
+***** solution_01_01.jl
+***** test_01_01.jl
+**** Turing
+***** exc_01_01.jl
+***** solution_01_01.jl
+***** test_01_01.jl
+* Hamiltonaian MCMC intuition
+https://elevanth.org/blog/2017/11/28/build-a-better-markov-chain/
+https://news.ycombinator.com/item?id=18608621
+https://statmodeling.stat.columbia.edu/2017/12/09/interactive-visualizations-mcmc-gp/
+https://www.youtube.com/watch?v=0kRytJZcHVw
+https://www.youtube.com/watch?v=a-wydhEuAm0
+http://arogozhnikov.github.io/2016/12/19/markov_chain_monte_carlo.html
+* Picture
+https://unsplash.com/photos/Mb-CUIKoG4M
+https://unsplash.com/photos/pd5FVvQ9-aY
+https://unsplash.com/photos/wD1LRb9OeEo
+https://unsplash.com/photos/3mt71MKGjQ0
+https://unsplash.com/photos/5fNmWej4tAA
+* Conditional distribution
+https://stats.stackexchange.com/questions/30588/deriving-the-conditional-distributions-of-a-multivariate-normal-distribution
+* Interfaces
+https://github.com/TuringLang/AbstractMCMC.jl/
+https://turing.ml/dev/docs/for-developers/interface
+https://github.com/TuringLang/AbstractMCMC.jl/blob/master/src/interface.jl
+https://github.com/TuringLang/AbstractMCMC.jl/issues/31
+https://github.com/TuringLang/EllipticalSliceSampling.jl
+* R
+https://avt.im/blog/2018/03/23/R-packages-ggplot-in-julia
+* HMC stats
+https://github.com/arviz-devs/ArviZ.jl/blob/master/src/mcmcchains.jl
+** Stan
+For more details see Stan Development Team (2016) and Betancourt (2017).
+*** accept_stat__: the average acceptance probabilities of all possible samples in the proposed tree.
+*** divergent__: the number of leapfrog transitions with diverging error. Because NUTS terminates at the first divergence this will be either 0 or 1 for each iteration.
+*** stepsize__: the step size used by NUTS in its Hamiltonian simulation.
+*** treedepth__: the depth of tree used by NUTS, which is the log (base 2) of the number of leapfrog steps taken during the Hamiltonian simulation.
+*** energy__: the value of the Hamiltonian (up to an additive constant) at each iteration.
+** AdvancedHMC
+(:n_steps,
+:is_accept,
+:acceptance_rate,
+:log_density,
+:hamiltonian_energy,
+:hamiltonian_energy_error,
+:max_hamiltonian_energy_error,
+:tree_depth,
+:numerical_error,
+:step_size,
+:nom_step_size,
+:is_adapt)
+** DynamicHMC
+** Arviz
+lp: (unnormalized) log probability for sample
+step_size
+step_size_bar
+tune: boolean variable indicating if the sampler is tuning or sampling
+depth:
+tree_size:
+mean_tree_accept:
+diverging: HMC-NUTS only, boolean variable indicating divergent transitions
+energy: HMC-NUTS only
+energy_error
+max_energy_error
+** PyMC3
+    mean_tree_accept: The mean acceptance probability for the tree that generated this sample. The mean of these values across all samples but the burn-in should be approximately target_accept (the default for this is 0.8).
+
+    diverging: Whether the trajectory for this sample diverged. If there are any divergences after burnin, this indicates that the results might not be reliable. Reparametrization can often help, but you can also try to increase target_accept to something like 0.9 or 0.95.
+
+    energy: The energy at the point in phase-space where the sample was accepted. This can be used to identify posteriors with problematically long tails. See below for an example.
+
+    energy_change: The difference in energy between the start and the end of the trajectory. For a perfect integrator this would always be zero.
+
+    max_energy_change: The maximum difference in energy along the whole trajectory.
+
+    depth: The depth of the tree that was used to generate this sample
+
+    tree_size: The number of leafs of the sampling tree, when the sample was accepted. This is usually a bit less than 2 ** depth. If the tree size is large, the sampler is using a lot of leapfrog steps to find the next sample. This can for example happen if there are strong correlations in the posterior, if the posterior has long tails, if there are regions of high curvature (“funnels”), or if the variance estimates in the mass matrix are inaccurate. Reparametrisation of the model or estimating the posterior variances from past samples might help.
+
+    tune: This is True, if step size adaptation was turned on when this sample was generated.
+
+    step_size: The step size used for this sample.
+
+    step_size_bar: The current best known step-size. After the tuning samples, the step size is set to this value. This should converge during tuning.
+
+    model_logp: The model log-likelihood for this sample.
+* Interfaces
+https://github.com/TuringLang/AdvancedHMC.jl/issues/101
+https://github.com/joshday/OnlineStats.jl/issues/158
+* Recommended reading
+** MCMC
+*** Rethinking Statistics Cpt 8
+** GLMs
+*** Rethinking Statistics Cpt 9
+** Poisson regression
+*** Rethinking Statistics Cpt 10
+** Hierarchical models
+*** Rethinking Statistics Cpt 12
+** Gaussian processes
+*** Rethinking statistics Cpt 13
+* Packages
+** Turing -- nice package for users
+** Soss -- good for gluing things together
+* https://brandonwillard.github.io/a-role-for-symbolic-computation-in-the-general-estimation-of-statistical-models.html

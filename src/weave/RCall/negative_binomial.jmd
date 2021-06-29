@@ -1,0 +1,208 @@
+## Modeling count data with the Negative Binomial
+
+When we considered modelling the data using a Poisson, we saw that the model didn't appear to fit as well to the data as we would like. In particular the model underpredicted low and high numbers of complaints, and overpredicted the medium number of complaints. This is one indication of over-dispersion, where the variance is larger than the mean. A Poisson model doesn't fit over-dispersed count data very well because the same parameter $\lambda$, controls both the expected counts and the variance of these counts. The natural alternative to this is the negative binomial model:
+
+$$
+\begin{align*} \text{complaints}*{b,t} & \sim \text{Neg-Binomial}(\lambda*{b,t}, \phi) \
+\lambda*{b,t} & = \exp{(\eta*{b,t})} \
+\eta*{b,t} &= \alpha + \beta \, {\rm traps}*{b,t} + \beta*{\rm super} \, {\rm super}*{b} + \text{log*sq*foot}_{b} \end{align*}
+$$
+
+In Stan the negative binomial mass function we'll use is called  $\texttt{neg_binomial_2_log}(\text{ints} \, y, \text{reals} \, \eta, \text{reals} \, \phi)$  in Stan. Like the `poisson_log` function, this negative binomial mass function that is parameterized in terms of its log-mean, $\eta$, but it also has a precision $\phi$ such that
+
+$$
+\mathbb{E}[y] \, = \lambda = \exp(\eta)
+$$
+
+$$
+\text{Var}[y] = \lambda + \lambda^2/\phi = \exp(\eta) + \exp(\eta)^2 / \phi.
+$$
+
+
+As $\phi$ gets larger the term $\lambda^2 / \phi$ approaches zero and so  the variance of the negative-binomial approaches $\lambda$, i.e., the negative-binomial gets closer and closer to the Poisson.
+
+### Stan program for negative-binomial regression
+
+  * Write `multiple_NB_regression.stan` together
+
+### Fake data fit: Multiple NB regression
+
+```julia
+
+R"""
+comp_dgp_multiple_NB <- stan_model('stan_programs/multiple_NB_regression_dgp.stan')
+"""
+
+```
+
+We're going to generate one draw from the fake data model so we can use the data to fit our model and compare the known values of the parameters to the posterior density of the parameters.
+
+```julia
+
+R"""
+fitted_model_dgp_NB <-
+  sampling(
+  comp_dgp_multiple_NB,
+  data = list(N = nrow(pest_data)),
+  chains = 1,
+  cores = 1,
+  iter = 1,
+  algorithm = 'Fixed_param',
+  seed = 123
+  )
+samps_dgp_NB <- rstan::extract(fitted_model_dgp_NB)
+"""
+
+```
+
+Create a dataset to feed into the Stan model.
+
+```julia
+
+R"""
+stan_dat_fake_NB <- list(
+  N = nrow(pest_data),
+  log_sq_foot = samps_dgp_NB$log_sq_foot[1, ],
+  live_in_super = samps_dgp_NB$live_in_super[1, ],
+  traps = samps_dgp_NB$traps[1, ],
+  complaints = samps_dgp_NB$complaints[1, ]
+)
+"""
+
+```
+
+Compile the inferential model.
+
+```julia
+
+R"""
+comp_model_NB <- stan_model('stan_programs/multiple_NB_regression.stan')
+"""
+
+```
+
+Now we run our NB regression over the fake data and extract the samples to examine posterior predictive checks and to check whether we've sufficiently recovered our known parameters, $\text{alpha}$ $\texttt{beta}$, .
+
+```julia
+
+R"""
+fitted_model_NB <- sampling(comp_model_NB, data = stan_dat_fake_NB,
+                            chains = 4, cores = 4)
+posterior_alpha_beta_NB <-
+  as.matrix(fitted_model_NB,
+            pars = c('alpha',
+                     'beta',
+                     'beta_super',
+                     'inv_phi')
+  )
+"""
+
+```
+
+Construct the vector of true values from your simulated dataset and compare to the recovered parameters.
+
+```julia
+
+R"""
+true_alpha_beta_NB <-
+  c(samps_dgp_NB$alpha,
+    samps_dgp_NB$beta,
+    samps_dgp_NB$beta_super,
+    samps_dgp_NB$inv_phi
+  )
+mcmc_recover_hist(posterior_alpha_beta_NB, true = true_alpha_beta_NB)
+"""
+
+```
+
+### Fit to real data and check the fit
+
+```julia
+
+R"""
+fitted_model_NB <- sampling(comp_model_NB, data = stan_dat_simple)
+samps_NB <- rstan::extract(fitted_model_NB)
+"""
+
+```
+
+Let's look at our predictions vs. the data.
+
+```julia
+
+R"""
+y_rep <- samps_NB$y_rep
+ppc_dens_overlay(stan_dat_simple$complaints, y_rep[1:200,])
+"""
+
+```
+
+It appears that our model now captures both the number of small counts better as well as the tails.
+
+Let's check if the negative binomial model does a better job capturing the number of zeros:
+
+```julia
+
+R"""
+ppc_stat(y = stan_dat_simple$complaints, yrep = y_rep, stat = "prop_zero")
+"""
+
+```
+
+These look OK, but let's look at the standardized residual plot.
+
+```julia
+
+R"""
+mean_inv_phi <- mean(samps_NB$inv_phi)
+mean_y_rep <- colMeans(y_rep)
+std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
+qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+"""
+
+```
+
+Looks OK, but we still have some very large *standardized* residuals. This might be because we are currently ignoring that the data are clustered by buildings, and that the probability of roach issue may vary substantially across buildings.
+
+```julia
+
+R"""
+ppc_rootogram(stan_dat_simple$complaints, yrep = y_rep)
+"""
+
+```
+
+The rootogram now looks much more plausible. We can tell this because now the expected number of complaints matches much closer to the observed number of complaints. However, we still have some larger counts that appear to be outliers for the model.
+
+Check predictions by number of traps:
+
+```julia
+
+R"""
+ppc_intervals(
+  y = stan_dat_simple$complaints,
+  yrep = y_rep,
+  x = stan_dat_simple$traps
+) +
+  labs(x = "Number of traps", y = "Number of complaints")
+"""
+
+```
+
+We haven't used the fact that the data are clustered by building yet. A posterior  predictive check might elucidate whether it would be a good idea to add the building information into the model.
+
+```julia
+
+R"""
+ppc_stat_grouped(
+  y = stan_dat_simple$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'mean',
+  binwidth = 0.2
+)
+"""
+
+```
+
+We're getting plausible predictions for most building means but some are estimated better than others and some have larger uncertainties than we might expect. If we explicitly model the variation across buildings we may be able to get much better estimates.

@@ -1,0 +1,163 @@
+## Expanding the model: multiple predictors
+
+Modeling the relationship between complaints and bait stations is the simplest  model. We can expand the model, however, in a few ways that will be beneficial  for our client. Moreover, the manager has told us that they expect there are a number of other reasons that one building might have more roach complaints than another.
+
+### Interpretability
+
+Currently, our model's mean parameter is a rate of complaints per 30 days, but we're modeling a process that occurs over an area as well as over time. We have the square footage of each building, so if we add that information into the model, we can interpret our parameters as a rate of complaints per square foot per 30 days.
+
+$$
+\begin{align*} \textrm{complaints}*{b,t} & \sim \textrm{Poisson}(\textrm{sq*foot}*b\,\lambda*{b,t}) \
+\lambda*{b,t} & = \exp{(\eta*{b,t} )} \
+\eta*{b,t} &= \alpha + \beta \, \textrm{traps}*{b,t} \end{align*}
+$$
+
+The term $\text{sq_foot}$ is called an exposure term. If we log the term, we can  put it in $\eta_{b,t}$:
+
+$$
+\begin{align*} \textrm{complaints}*{b,t} & \sim \textrm{Poisson}(\lambda*{b,t}) \
+\lambda*{b,t} & = \exp{(\eta*{b,t} )} \
+\eta*{b,t} &= \alpha + \beta \, \textrm{traps}*{b,t} + \textrm{log*sq*foot}_b \end{align*}
+$$
+
+A quick test shows us that there appears to be a relationship between the square footage of the building and the number of complaints received:
+
+```julia
+
+R"""
+ggplot(pest_data, aes(x = log(total_sq_foot), y = log1p(complaints))) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+"""
+
+```
+
+Using the property manager's intuition, we include two extra pieces of information we know about the building - the (log of the) square floor space and whether there is a live in super or not - into both the simulated and real data.
+
+```julia
+
+R"""
+stan_dat_simple$log_sq_foot <- log(pest_data$total_sq_foot/1e4)
+stan_dat_simple$live_in_super <- pest_data$live_in_super
+"""
+
+```
+
+### Stan program for Poisson multiple regression
+
+Now we need a new Stan model that uses multiple predictors.
+
+  * Write `multiple_poisson_regression.stan` together
+
+### Simulate fake data with multiple predictors
+
+```julia
+
+R"""
+comp_dgp_multiple <- stan_model('stan_programs/multiple_poisson_regression_dgp.stan')
+"""
+
+```
+
+```julia
+
+R"""
+fitted_model_dgp <-
+  sampling(
+  comp_dgp_multiple,
+  data = list(N = nrow(pest_data)),
+  chains = 1,
+  cores = 1,
+  iter = 1,
+  algorithm = 'Fixed_param',
+  seed = 123
+  )
+samps_dgp <- rstan::extract(fitted_model_dgp)
+"""
+
+```
+
+Now pop that simulated data into a list ready for Stan.
+
+```julia
+
+R"""
+stan_dat_fake <- list(
+  N = nrow(pest_data),
+  log_sq_foot = samps_dgp$log_sq_foot[1, ],
+  live_in_super = samps_dgp$live_in_super[1, ],
+  traps = samps_dgp$traps[1, ],
+  complaints = samps_dgp$complaints[1, ]
+)
+"""
+
+```
+
+And then compile and fit the model we wrote for the multiple regression.
+
+```julia
+
+R"""
+comp_model_P_mult <- stan_model('stan_programs/multiple_poisson_regression.stan')
+fit_model_P_mult <- sampling(comp_model_P_mult, data = stan_dat_fake, chains = 4, cores = 4)
+"""
+
+```
+
+Then compare these parameters to the true parameters:
+
+```julia
+
+R"""
+posterior_alpha_beta <- as.matrix(fit_model_P_mult, pars = c('alpha','beta','beta_super'))
+true_alpha_beta <- c(samps_dgp$alpha,samps_dgp$beta,samps_dgp$beta_super)
+mcmc_recover_hist(posterior_alpha_beta, true = true_alpha_beta)
+"""
+
+```
+
+We've recovered the parameters sufficiently well, so we've probably coded the Stan program correctly and we're ready to fit the real data.
+
+### Fit the real data
+
+Now let's use the real data and explore the fit.
+
+```julia
+
+R"""
+fit_model_P_mult_real <- sampling(comp_model_P_mult, data = stan_dat_simple)
+y_rep <- as.matrix(fit_model_P_mult_real, pars = "y_rep")
+ppc_dens_overlay(stan_dat_simple$complaints, y_rep[1:200,])
+"""
+
+```
+
+This again looks like we haven't captured the smaller counts very well, nor have we captured the larger counts.
+
+```julia
+
+R"""
+prop_zero <- function(x) mean(x == 0)
+ppc_stat(y = stan_dat_simple$complaints, yrep = y_rep, stat = "prop_zero", binwidth = 0.01)
+"""
+
+```
+
+We're still severely underestimating the proportion of zeros in the data. Ideally this vertical line would fall somewhere within the histogram.
+
+We can also plot uncertainty intervals for the predicted complaints for different numbers of traps.
+
+```julia
+
+R"""
+ppc_intervals(
+  y = stan_dat_simple$complaints,
+  yrep = y_rep,
+  x = stan_dat_simple$traps
+) +
+  labs(x = "Number of traps", y = "Number of complaints")
+"""
+
+```
+
+We can see that we've increased the tails a bit more at the larger numbers of traps but we still have some large observed numbers of complaints that the model would consider extremely unlikely events.
