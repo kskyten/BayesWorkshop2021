@@ -80,7 +80,7 @@ load the data and see what the structure is:
 
 ```julia
 using Dates
-pest_data = Feather.read(joinpath(@__DIR__, "../../../data/pest_data.feather"))
+pest_data = Feather.read(joinpath(@__DIR__, "../../data/pest_data.feather"))
 pest_data.date = convert.(Date, pest_data.date)
 ```
 
@@ -135,7 +135,7 @@ pest_data |>
 )
 ```
 
-```{r data-plots}
+```r
 ggplot(pest_data, aes(x = complaints)) +
   geom_bar()
 
@@ -143,7 +143,7 @@ ggplot(pest_data, aes(x = traps, y = complaints, color = live_in_super == TRUE))
   geom_jitter()
 ```
 
-```{r, data-plots-ts, fig.width = 6, fig.height = 8}
+```r
 ggplot(pest_data, aes(x = date, y = complaints, color = live_in_super == TRUE)) +
   geom_line(aes(linetype = "Number of complaints")) +
   geom_point(color = "black") +
@@ -200,69 +200,54 @@ $$
 \end{align*}
 $$
 
-Let's encode this probability model in a Stan program.
+Let's encode this probability model in a Soss.
 
 ### Writing our first model
 
-* Write `simple_poisson_regression.jl` together
+```julia
+using Soss
+using MeasureTheory
+
+simple_poisson = @model traps begin
+    α ~ Normal(log(4), .1)
+    β ~ Normal(-0.25, .1)
+
+    complaints ~ For(eachindex(traps)) do i
+        λ = exp(α + β * traps[i])
+        Poisson(λ)
+    end
+end
+```
 
 ### Making sure our code is right
 
 However, before we fit the model to real data, we should check that our
 model works well with simulated data. We'll simulate data according to the model
 and then check that we can sufficiently recover the parameter values used
-in the simulation.
-
-* Write `simple_poisson_regression_dgp.stan` together
-
-We can use the `stan()` function to compile and fit the model, but here we will
-do the compilation and fitting in two stages to demonstrate what is really
-happening under the hood.
-
-First we will compile the Stan program (`simple_poisson_regression_dgp.stan`) that
-will generate the fake data.
-
-```julia
-include("../models/simple_poisson_regression.jl"); simple_poisson
-```
-
-```{r , cache=TRUE, results="hide", message=FALSE}
-comp_dgp_simple <- stan_model('stan_programs/simple_poisson_regression_dgp.stan')
-```
-
-Printing this object shows the Stan program:
-
-```julia
-show(simple_poisson)
-```
-
-Now we can simulate the data by calling the `rand()` method.
+in the simulation. We can simulate the data by calling the `rand()` method on
+our model.
 
 ```julia
 rand(simple_poisson((ɑ = 0.0, β = 1.0, traps = [1, 2, 3])))
 ```
 
 ```julia
-include("../models/simple_poisson_dgp.jl")
+using Distributions
+
+function poisson_dgp(N, mean_traps)
+    α = rand(Normal(log(4), .1))
+    β = rand(Normal(-0.25, .1))
+    traps = rand(Poisson(mean_traps), N)
+    complaints = similar(traps)
+    for i in eachindex(traps)
+        complaints[i] = rand(Poisson(exp(α + β * traps[i])))
+    end
+
+    return (α = α, β = β, traps = traps, complaints = complaints)
+end
+
 fake_data = poisson_dgp(size(pest_data, 1), mean(pest_data.traps))
 ```
-
-```{r runpoissondgp}
-fitted_model_dgp <- sampling(
-  comp_dgp_simple,
-  data = list(N = nrow(pest_data), mean_traps = mean(pest_data$traps)),
-  chains = 1,
-  iter = 1,
-  algorithm = 'Fixed_param',
-  seed = 123
-  )
-
-# see http://mc-stan.org/rstan/articles/stanfit_objects.html for various
-# ways of extracting the contents of the stanfit object
-samps_dgp <- rstan::extract(fitted_model_dgp)
-str(samps_dgp)
-```
-
 
 ### Fit the model to the fake data:
 
@@ -274,26 +259,8 @@ in the `data` block of the Stan program.
 post = dynamicHMC(simple_poisson(traps=fake_data.traps), (complaints=fake_data.complaints,))
 ```
 
-```{r}
-stan_dat_fake <- list(
-  N = nrow(pest_data),
-  traps = samps_dgp$traps[1, ],
-  complaints = samps_dgp$complaints[1, ]
-)
-str(stan_dat_fake)
-```
-
 Now that we have the simulated data we fit the model to see if we can recover
 the `alpha` and `beta` parameters used in the simulation.
-
-```{r , cache=TRUE, results="hide", message=FALSE}
-comp_model_P <- stan_model('stan_programs/simple_poisson_regression.stan')
-fit_model_P <- sampling(comp_model_P, data = stan_dat_fake, seed = 123)
-
-posterior_alpha_beta <- as.matrix(fit_model_P, pars = c('alpha','beta'))
-head(posterior_alpha_beta)
-```
-
 
 ### Assess parameter recovery
 
@@ -306,7 +273,7 @@ post |> @vlplot(:bar, x={:β, bin=true}, y = "count()")
 ```
 
 
-```{r}
+```r
 true_alpha_beta <- c(samps_dgp$alpha, samps_dgp$beta)
 mcmc_recover_hist(posterior_alpha_beta, true = true_alpha_beta)
 ```
@@ -325,7 +292,7 @@ are a good resource on this topic.)
 
 Here is a plot of the density estimate of the observed data compared to
 200 of the `y_rep` datasets:
-```{r}
+```r
 y_rep <- as.matrix(fit_model_P, pars = "y_rep")
 ppc_dens_overlay(y = stan_dat_fake$complaints, yrep = y_rep[1:200, ])
 ```
@@ -340,7 +307,7 @@ expected counts (continuous line) vs the observed counts (blue histogram). We
 can see the model fits well because the observed histogram matches the expected
 counts relatively well.
 
-```{r}
+```r
 ppc_rootogram(stan_dat_fake$complaints, yrep = y_rep)
 ```
 
@@ -354,7 +321,7 @@ to Stan using the variables in the `pest_data` data frame:
 post = dynamicHMC(simple_poisson(traps=pest_data.traps), (complaints=pest_data.complaints,))
 ```
 
-```{r stan-data}
+```r
 stan_dat_simple <- list(
   N = nrow(pest_data),
   complaints = pest_data$complaints,
@@ -364,19 +331,19 @@ stan_dat_simple <- list(
 
 As we have already compiled the model, we can jump straight to sampling from it.
 
-```{r fit_P_real_data, cache=TRUE}
+```r
 fit_P_real_data <- sampling(comp_model_P, data = stan_dat_simple)
 ```
 
 and printing the parameters. What do these tell us?
 
-```{r results_simple_P}
+```r
 print(fit_P_real_data, pars = c('alpha','beta'))
 ```
 
 We can also plot the posterior distributions:
 
-```{r hist_simple_P}
+```r
 mcmc_hist(as.matrix(fit_P_real_data, pars = c('alpha','beta')))
 ```
 
@@ -387,11 +354,11 @@ following month. However, we still need to consider how well the model fits.
 
 ### Posterior predictive checking
 
-```{r}
+```r
 y_rep <- as.matrix(fit_P_real_data, pars = "y_rep")
 ```
 
-```{r marginal_PPC}
+```r
 ppc_dens_overlay(y = stan_dat_simple$complaints, y_rep[1:200,])
 ```
 
@@ -402,7 +369,7 @@ this data.
 
 Let's explore this further by looking directly at the proportion of zeros in the
 real data and predicted data.
-```{r}
+```r
 prop_zero <- function(x) mean(x == 0)
 ppc_stat(y = stan_dat_simple$complaints, yrep = y_rep, stat = "prop_zero")
 ```
@@ -412,7 +379,7 @@ clear that the model does not capture this feature of the data well at all.
 
 This next plot is a plot of the standardised residuals of the observed vs predicted number of complaints.
 
-```{r}
+```r
 mean_y_rep <- colMeans(y_rep)
 std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep)
 qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
@@ -426,7 +393,7 @@ The rootogram is another useful plot to compare the observed vs expected number
 of complaints. This is a plot of the expected counts (continuous line) vs the
 observed counts (blue histogram):
 
-```{r}
+```r
 ppc_rootogram(stan_dat_simple$complaints, yrep = y_rep)
 ```
 
@@ -439,7 +406,7 @@ We can also view how the predicted number of complaints varies with the number
 of traps. From this we can see that the model doesn't seem to fully capture the
 data.
 
-```{r}
+```r
 ppc_intervals(
   y = stan_dat_simple$complaints,
   yrep = y_rep,
