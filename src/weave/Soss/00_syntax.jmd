@@ -1,0 +1,68 @@
+# Modeling joint distributions using Soss
+
+The goal of Bayesian data analysis is to come up with a plausible explanation for some phenomenon or data in the form of a joint distribution. Defining complicated multivariate distributions outright is extremely difficult, so statistician typically decompose the task into defining conditional distributions and place independence assumptions on the interactions between the random variables.
+
+# Model syntax
+
+Soss syntax is designed to closely resemble the typical mathematical notation for Bayesian models.
+
+## Template for defining Soss models
+
+A Soss model is defined by using the model macro.
+
+```julia
+name_of_the_model = @model (unbound, parameters) begin
+    # Define your model here
+end
+```
+
+## Univariate random variables
+
+The typical notation $X \sim Normal(\mu, \sigma)$, translates directly to Soss. The objects on the right hand side must implement a rand method.
+
+## Independent and identically distributed random variables
+
+It is common to assume that a collection of random variables are independent and identically distributed. This is commonly abbreviated as iid. In Soss, we declare the iid assumption using the iid function. It takes as argument the length of the random vector, for which we are making the iid assumption. For example, we could assume 10 iid standard Normal distributions using
+
+```julia
+N = 10
+iid(10)(Normal(0, 1))
+```
+
+It is typical to use the pipe operator |> to make the syntax nicer.
+
+```julia
+N = 10
+Normal(0, 1) |> iid(N)
+```
+
+## Loops
+
+To model a random vector, where the components depend on the index, we use `for` loops. The first argument is a function, which maps the index of a random vector to an expression of the component.
+
+```julia
+For(j -> Normal(theta[j], sigma[j]), 1:J)
+```
+
+It is typical to use Julia's `do` shorthand for defining loops.
+
+```julia
+For(1:J) do j
+    Normal(θ[j], σ[j])
+end
+```
+
+## Free and bound variables
+
+
+# Using Soss models
+
+Once we have defined a model, we can assign values to the unbound parameters to define a joint distribution. Values can be assigned by calling the generated model function with keyword arguments. Once all the parameters are bound, we have a fully defined joint distribution.
+
+# The Bayesian workflow in Soss
+
+## Model transformations
+
+## Prior predictive
+
+## Posterior predictive
