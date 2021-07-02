@@ -232,15 +232,15 @@ rand(simple_poisson((ɑ = 0.0, β = 1.0, traps = [1, 2, 3])))
 ```
 
 ```julia
-using Distributions
+using Distributions: Distributions
 
 function poisson_dgp(N, mean_traps)
-    α = rand(Normal(log(4), .1))
-    β = rand(Normal(-0.25, .1))
-    traps = rand(Poisson(mean_traps), N)
+    α = rand(Distributions.Normal(log(4), .1))
+    β = rand(Distributions.Normal(-0.25, .1))
+    traps = rand(Distributions.Poisson(mean_traps), N)
     complaints = similar(traps)
     for i in eachindex(traps)
-        complaints[i] = rand(Poisson(exp(α + β * traps[i])))
+        complaints[i] = rand(Distributions.Poisson(exp(α + β * traps[i])))
     end
 
     return (α = α, β = β, traps = traps, complaints = complaints)
@@ -256,7 +256,8 @@ arrange the data into a named list. The names must match the names used
 in the `data` block of the Stan program.
 
 ```julia
-post = dynamicHMC(simple_poisson(traps=fake_data.traps), (complaints=fake_data.complaints,))
+using SampleChainsDynamicHMC
+post = Soss.sample(DynamicHMCChain, simple_poisson(traps=fake_data.traps) | (complaints=fake_data.complaints,))
 ```
 
 Now that we have the simulated data we fit the model to see if we can recover

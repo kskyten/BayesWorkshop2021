@@ -90,6 +90,12 @@ git-tree-sha1 = "f641eb0a4f00c343bbc32346e1217b86f3ce9dad"
 uuid = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
 version = "0.5.1"
 
+[[CanonicalTraits]]
+deps = ["MLStyle"]
+git-tree-sha1 = "f959d0e7164fb0262b02abecb93cf42b9a9f3188"
+uuid = "a603d957-0e48-4f86-8fbd-0b7bc66df689"
+version = "0.2.4"
+
 [[CategoricalArrays]]
 deps = ["DataAPI", "Future", "JSON", "Missings", "Printf", "Statistics", "StructTypes", "Unicode"]
 git-tree-sha1 = "18d7f3e82c1a80dd38c16453b8fd3f0a7db92f23"
@@ -511,12 +517,6 @@ git-tree-sha1 = "49fb3cb53362ddadb4415e9b73926d6b40709e70"
 uuid = "b14d175d-62b4-44ba-8fb7-3064adc8c3ec"
 version = "0.2.4"
 
-[[KeywordCalls]]
-deps = ["Compat", "Tricks"]
-git-tree-sha1 = "682336af7cf66410e34c629d95b606170358e1ac"
-uuid = "4d827475-d3e4-43d6-abe3-9688362ede9f"
-version = "0.2.1"
-
 [[LaTeXStrings]]
 git-tree-sha1 = "c7f1c695e06c01b95a67f0cd1d34994f3e7db104"
 uuid = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
@@ -649,10 +649,10 @@ deps = ["Artifacts", "Libdl"]
 uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
 
 [[MeasureTheory]]
-deps = ["Accessors", "ArrayInterface", "ConcreteStructs", "Distributions", "DistributionsAD", "DynamicIterators", "InfiniteArrays", "IntervalSets", "IterTools", "KeywordCalls", "LinearAlgebra", "MLStyle", "MacroTools", "MappedArrays", "MonteCarloMeasurements", "NamedTupleTools", "NestedTuples", "PositiveFactorizations", "Random", "RandomNumbers", "SimpleTraits", "SpecialFunctions", "StaticArrays", "StatsFuns", "TransformVariables", "Tullio"]
-git-tree-sha1 = "769090cbd53e6029c073e3f69c7110b1ac1f46bc"
+deps = ["Accessors", "ArrayInterface", "ConcreteStructs", "Distributions", "DistributionsAD", "DynamicIterators", "InfiniteArrays", "IntervalSets", "IterTools", "LinearAlgebra", "MLStyle", "MacroTools", "MappedArrays", "MonteCarloMeasurements", "NamedTupleTools", "NestedTuples", "Random", "RandomNumbers", "SpecialFunctions", "StaticArrays", "StatsFuns", "TransformVariables", "Tricks", "Tullio"]
+git-tree-sha1 = "7a201c469680b5396a22af6fa40ccb365abc62ac"
 uuid = "eadaa1a4-d27c-401d-8699-e962e1bbc33b"
-version = "0.8.1"
+version = "0.6.2"
 
 [[Measurements]]
 deps = ["Calculus", "LinearAlgebra", "Printf", "RecipesBase", "Requires"]
@@ -944,10 +944,16 @@ uuid = "476501e8-09a2-5ece-8869-fb82de89a1fa"
 version = "0.6.22"
 
 [[SampleChains]]
-deps = ["Accessors", "LazyArrays", "MCMCDiagnostics", "MappedArrays", "Measurements", "NestedTuples", "Random", "StatsBase", "TupleVectors"]
-git-tree-sha1 = "ed4351e4d90b6800de464a12aadb2425615231fb"
+deps = ["Accessors", "ArraysOfArrays", "ElasticArrays", "LazyArrays", "MCMCDiagnostics", "MappedArrays", "Measurements", "NestedTuples", "Random", "StatsBase", "StructArrays", "TupleVectors"]
+git-tree-sha1 = "7e8e8e86483612323d8ae52a57da3d92d408a087"
 uuid = "754583d1-7fc4-4dab-93b5-5eaca5c9622e"
-version = "0.5.0"
+version = "0.4.0"
+
+[[SampleChainsDynamicHMC]]
+deps = ["ConcreteStructs", "DynamicHMC", "ElasticArrays", "LogDensityProblems", "MappedArrays", "NestedTuples", "Random", "Reexport", "SampleChains", "StructArrays", "TransformVariables", "TupleVectors"]
+git-tree-sha1 = "3a92196e64b32a28bb8a145ba06a9bc152c59457"
+uuid = "6d9fd711-e8b2-4778-9c70-c1dfb499d4c4"
+version = "0.2.0"
 
 [[Scratch]]
 deps = ["Dates"]
@@ -1003,12 +1009,6 @@ git-tree-sha1 = "ce0389142f3ec4681b0f6bf75da5acd4c43545ef"
 uuid = "a6525b86-64cd-54fa-8f65-62fc48bdc0e8"
 version = "0.3.0"
 
-[[SimpleTraits]]
-deps = ["InteractiveUtils", "MacroTools"]
-git-tree-sha1 = "daf7aec3fe3acb2131388f93a4c409b8c7f62226"
-uuid = "699a6c99-e7fa-54fc-8d76-47d257e15c1d"
-version = "0.9.3"
-
 [[Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
 
@@ -1025,20 +1025,20 @@ uuid = "a2af1166-a08f-5f64-846c-94a0d3cef48c"
 version = "1.0.0"
 
 [[Soss]]
-deps = ["ArrayInterface", "DiffResults", "Distributions", "FillArrays", "GeneralizedGenerated", "Graphs", "IRTools", "JuliaVariables", "LinearAlgebra", "MLStyle", "MacroTools", "MappedArrays", "MeasureTheory", "NamedTupleTools", "NestedTuples", "Printf", "Random", "RecipesBase", "Reexport", "Requires", "RuntimeGeneratedFunctions", "SampleChains", "SimpleGraphs", "SimplePartitions", "SimplePosets", "SpecialFunctions", "Statistics", "StatsBase", "StatsFuns", "SymbolicCodegen", "SymbolicUtils", "TransformVariables", "Tullio", "TupleVectors"]
-git-tree-sha1 = "3fb7973d3274cbaeb78e9c767615ba3046738e6c"
+deps = ["ArrayInterface", "CanonicalTraits", "DataStructures", "DiffResults", "Distributions", "FillArrays", "GeneralizedGenerated", "Graphs", "IRTools", "IterTools", "JuliaVariables", "LazyArrays", "LinearAlgebra", "MLStyle", "MacroTools", "MappedArrays", "MeasureTheory", "NamedTupleTools", "NestedTuples", "Printf", "Random", "RecipesBase", "Reexport", "Requires", "RuntimeGeneratedFunctions", "SampleChains", "SimpleGraphs", "SimplePartitions", "SimplePosets", "SpecialFunctions", "Statistics", "StatsBase", "StatsFuns", "SymbolicCodegen", "SymbolicUtils", "TransformVariables", "Tullio", "TupleVectors"]
+git-tree-sha1 = "778f01161ebb2a2d335651c2984d65039458d46d"
 uuid = "8ce77f84-9b61-11e8-39ff-d17a774bf41c"
-version = "0.19.2"
+version = "0.19.1"
 
 [[SparseArrays]]
 deps = ["LinearAlgebra", "Random"]
 uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [[SpecialFunctions]]
-deps = ["OpenSpecFun_jll"]
-git-tree-sha1 = "7286f31f27e3335cba31c618ac344a35eceac060"
+deps = ["ChainRulesCore", "LogExpFunctions", "OpenSpecFun_jll"]
+git-tree-sha1 = "a50550fa3164a8c46747e62063b4d774ac1bcf49"
 uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
-version = "1.1.0"
+version = "1.5.1"
 
 [[Static]]
 deps = ["IfElse"]
@@ -1109,9 +1109,9 @@ version = "0.2.2"
 
 [[SymbolicUtils]]
 deps = ["AbstractAlgebra", "AbstractTrees", "Combinatorics", "ConstructionBase", "DataStructures", "IfElse", "LabelledArrays", "LinearAlgebra", "NaNMath", "Setfield", "SparseArrays", "SpecialFunctions", "StaticArrays", "TimerOutputs"]
-git-tree-sha1 = "e0094258633c2d7c00fa61140c2f21c592603d8c"
+git-tree-sha1 = "114094cc1c0cf2cb347f665a3ecb31dd0f8973d6"
 uuid = "d1185830-fcd6-423d-90d6-eec64667417b"
-version = "0.11.0"
+version = "0.10.3"
 
 [[TOML]]
 deps = ["Dates"]
@@ -1151,9 +1151,9 @@ version = "1.5.5"
 
 [[TimerOutputs]]
 deps = ["ExprTools", "Printf"]
-git-tree-sha1 = "7ba978307a5d40c95c3247b7256f9e9807cab025"
+git-tree-sha1 = "209a8326c4f955e2442c07b56029e88bb48299c7"
 uuid = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
-version = "0.5.11"
+version = "0.5.12"
 
 [[Trajectories]]
 deps = ["RecipesBase", "Tables"]
@@ -1168,10 +1168,10 @@ uuid = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 version = "0.9.5"
 
 [[TransformVariables]]
-deps = ["ArgCheck", "DocStringExtensions", "ForwardDiff", "LinearAlgebra", "Pkg", "Random", "UnPack"]
-git-tree-sha1 = "1ea54f326e7d8f0abd74eeae8df2eaf8d584660b"
+deps = ["ArgCheck", "DocStringExtensions", "ForwardDiff", "LinearAlgebra", "Parameters", "Pkg", "Random"]
+git-tree-sha1 = "05cbdc6c521a03d5c258b682eb4f7e04d20991ba"
 uuid = "84d833dd-6860-57f9-a1a7-6da5db126cff"
-version = "0.4.0"
+version = "0.3.12"
 
 [[Tricks]]
 git-tree-sha1 = "8280b6d0096e88b77a84f843fa18620d3b20e052"
