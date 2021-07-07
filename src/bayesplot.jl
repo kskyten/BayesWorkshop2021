@@ -1,5 +1,9 @@
 using RCall
+using DataFrames
+
 bayesplot =  rimport("bayesplot")
+
+# https://github.com/JuliaInterop/RCall.jl/issues/333
 
 function mcmc_recover_hist(posterior, true_parameters; kwargs...)
     #TableTraits.isiterabletable(posterior) || error("Argument `posterior` is not an iterable table.")
