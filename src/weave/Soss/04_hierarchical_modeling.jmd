@@ -5,10 +5,10 @@
 Let's add a hierarchical intercept parameter, $\alpha_b$ at the building level to our model.
 
 $$
-\text{complaints}*{b,t} \sim \text{Neg-Binomial}(\lambda*{b,t}, \phi) \
-\lambda*{b,t}  = \exp{(\eta*{b,t})} \
-\eta*{b,t} = \mu*b + \beta \, {\rm traps}*{b,t} + \beta*{\rm super}\, {\rm super}*b + \text{log*sq*foot}*b \
-\mu*b \sim \text{Normal}(\alpha, \sigma*{\mu})
+\text{complaints}_{b,t} \sim \text{Neg-Binomial}(\lambda_{b,t}, \phi) \\
+\lambda_{b,t}  = \exp{(\eta_{b,t})} \\
+\eta_{b,t} = \mu_b + \beta \, {\rm traps}_{b,t} + \beta_{\rm super}\, {\rm super}_b + \text{log_sq_foot}_b \\
+\mu_b \sim \text{Normal}(\alpha, \sigma_{\mu})
 $$
 
 In our Stan model, $\mu_b$ is the $b$-th element of the vector $\texttt{mu}$ which has one element per building.
@@ -16,8 +16,8 @@ In our Stan model, $\mu_b$ is the $b$-th element of the vector $\texttt{mu}$ whi
 One of our predictors varies only by building, so we can rewrite the above model more efficiently like so:
 
 $$
-\eta*{b,t} = \mu*b + \beta \, {\rm traps}*{b,t} + \text{log*sq*foot}*b\
-\mu*b \sim \text{Normal}(\alpha +  \beta*{\text{super}} \, \text{super}*b , \sigma*{\mu})
+\eta_{b,t} = \mu_b + \beta \, {\rm traps}_{b,t} + \text{log_sq_foot}_b\\
+\mu_b \sim \text{Normal}(\alpha +  \beta_{\text{super}} \, \text{super}_b , \sigma_{\mu})
 $$
 
 We have more information at the building level as well, like the average age of the residents, the average age of the buildings, and the average per-apartment monthly rent so we can add that data into a matrix called `building_data`, which will have one row per building and four columns:
@@ -30,8 +30,8 @@ We have more information at the building level as well, like the average age of 
 We'll write the Stan model like:
 
 $$
-\eta*{b,t} = \alpha*b + \beta \, {\rm traps} + \text{log*sq*foot}\
-\mu \sim \text{Normal}(\alpha + \texttt{building*data} \, \zeta, \,\sigma*{\mu})
+\eta_{b,t} = \alpha_b + \beta \, {\rm traps} + \text{log_sq_foot}\\
+\mu \sim \text{Normal}(\alpha + \texttt{building_data} \, \zeta, \,\sigma_{\mu})
 $$
 
 ### Prepare building data for hierarchical
@@ -111,7 +111,7 @@ Again, we see evidence that our problems concentrate when $\texttt{sigma_mu}$ is
 Instead, we should use the non-centered parameterization for $\mu_b$. We define a vector of auxiliary variables in the parameters block, $\texttt{mu_raw}$ that is given a $\text{Normal}(0, 1)$ prior in the model block. We then make $\texttt{mu}$ a transformed parameter: We can reparameterize the random intercept $\mu_b$, which is distributed:
 
 $$
-\mu*b \sim \text{Normal}(\alpha + \texttt{building*data} \, \zeta, \sigma_{\mu})
+\mu_b \sim \text{Normal}(\alpha + \texttt{building_data} \, \zeta, \sigma_{\mu})
 $$
 
 ```
@@ -202,11 +202,11 @@ stan_dat_hier <- readRDS('data/pest_data_longer_stan_dat.RDS')
 Perhaps if the levels of complaints differ by building, the coefficient for the effect of traps on building does too. We can add this to our model and observe the fit.
 
 $$
-\text{complaints}*{b,t} \sim \text{Neg-Binomial}(\lambda*{b,t}, \phi)  \
-\lambda*{b,t} = \exp{(\eta*{b,t})}\
-\eta*{b,t} = \mu*b + \kappa*b \, \texttt{traps}*{b,t} + \text{log*sq*foot}*b \
-\mu*b \sim \text{Normal}(\alpha + \texttt{building*data} \, \zeta, \sigma*{\mu}) \
-\kappa*b \sim \text{Normal}(\beta + \texttt{building*data} \, \gamma, \sigma_{\kappa})
+\text{complaints}_{b,t} \sim \text{Neg-Binomial}(\lambda_{b,t}, \phi)  \\
+\lambda_{b,t} = \exp{(\eta_{b,t})}\\
+\eta_{b,t} = \mu_b + \kappa_b \, \texttt{traps}_{b,t} + \text{log_sq_foot}_b \\
+\mu_b \sim \text{Normal}(\alpha + \texttt{building_data} \, \zeta, \sigma_{\mu}) \\
+\kappa_b \sim \text{Normal}(\beta + \texttt{building_data} \, \gamma, \sigma_{\kappa})
 $$
 
 Fit the model to data and extract the posterior draws needed for our posterior predictive checks.
