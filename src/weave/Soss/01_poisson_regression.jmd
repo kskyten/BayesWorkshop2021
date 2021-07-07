@@ -7,7 +7,8 @@ date:
 <!-- ## Setup -->
 
 ```julia; echo=false; results="hidden"
-using TransformVariables, LogDensityProblems, DynamicHMC, Random, Feather
+# using TransformVariables, LogDensityProblems, DynamicHMC
+using Random, Feather
 
 Random.seed!(Random.GLOBAL_RNG, 123)
 ```
@@ -81,7 +82,7 @@ load the data and see what the structure is:
 ```julia
 using Dates
 pest_data = Feather.read(joinpath(@__DIR__, "../../data/pest_data.feather"))
-pest_data.date = convert.(Date, pest_data.date)
+pest_data.date = convert.(Date, pest_data.date);
 ```
 
 We have access to the following fields:
@@ -228,25 +229,12 @@ in the simulation. We can simulate the data by calling the `rand()` method on
 our model.
 
 ```julia
-rand(simple_poisson((ɑ = 0.0, β = 1.0, traps = [1, 2, 3])))
-```
+N = size(pest_data, 1)
+mean_traps = mean(pest_data.traps)
+fake_traps = rand.((Poisson(10) for x in 1:N));
 
-```julia
-using Distributions: Distributions
-
-function poisson_dgp(N, mean_traps)
-    α = rand(Distributions.Normal(log(4), .1))
-    β = rand(Distributions.Normal(-0.25, .1))
-    traps = rand(Distributions.Poisson(mean_traps), N)
-    complaints = similar(traps)
-    for i in eachindex(traps)
-        complaints[i] = rand(Distributions.Poisson(exp(α + β * traps[i])))
-    end
-
-    return (α = α, β = β, traps = traps, complaints = complaints)
-end
-
-fake_data = poisson_dgp(size(pest_data, 1), mean(pest_data.traps))
+fake_data = rand(simple_poisson(ɑ = 0.0, β = 1.0, traps = fake_traps));
+fake_complaints = collect(fake_data.complaints);
 ```
 
 ### Fit the model to the fake data:
@@ -257,7 +245,7 @@ in the `data` block of the Stan program.
 
 ```julia
 using SampleChainsDynamicHMC
-post = Soss.sample(DynamicHMCChain, simple_poisson(traps=fake_data.traps) | (complaints=fake_data.complaints,))
+fake_post = sample(simple_poisson(traps=fake_traps) | (complaints=fake_complaints,), dynamichmc())
 ```
 
 Now that we have the simulated data we fit the model to see if we can recover
@@ -266,17 +254,8 @@ the `alpha` and `beta` parameters used in the simulation.
 ### Assess parameter recovery
 
 ```julia
-post |> @vlplot(:bar, x={:α, bin=true}, y = "count()")
-```
-
-```julia
-post |> @vlplot(:bar, x={:β, bin=true}, y = "count()")
-```
-
-
-```r
-true_alpha_beta <- c(samps_dgp$alpha, samps_dgp$beta)
-mcmc_recover_hist(posterior_alpha_beta, true = true_alpha_beta)
+include("../../src/bayesplot.jl")
+mcmc_recover_hist(fake_post, (α = 0.0, β = 1.0))
 ```
 
 We don't do a great job recovering the parameters here simply because we're
