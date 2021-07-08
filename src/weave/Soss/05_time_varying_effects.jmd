@@ -78,7 +78,28 @@ $$
 ### Fit the model
 
 ```julia
+using Soss
+using MeasureTheory
 
+AR1 = @model (σ_mo, ρ) begin
+    mc ~ Chain(Normal(0, σ_mo/sqrt(1-ρ^2))) do x
+        Normal(ρ * x, σ_mo)
+    end
+end
+
+multiple_NB_regression = @model (traps, live_in_super, log_sq_foot) begin
+    alpha ∼ Normal(log(4), 1)
+    beta ∼ Normal(-0.25, 1)
+    beta_super ∼ Normal(-0.5, 1)
+    inv_phi ∼ Normal(0, 1)
+
+    complaints ∼ For(eachindex(traps)) do i
+        # TODO: Log parametrization
+        r = exp(alpha + beta * traps[i] + beta_super * live_in_super[i] + log_sq_foot[i])
+        p = inv(inv_phi)
+        # NegativeBinomial(r, p)
+    end
+end
 ```
 
 In the interest of brevity, we won't go on expanding the model, though we certainly could. What other information would help us understand the data generating process better? What other aspects of the data generating process might we want to capture that we're not capturing now?

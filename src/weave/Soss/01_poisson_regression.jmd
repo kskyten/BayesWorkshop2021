@@ -236,9 +236,9 @@ our model.
 ```julia
 N = size(pest_data, 1)
 mean_traps = mean(pest_data.traps)
-fake_traps = rand.((Poisson(mean_traps) for x in 1:N));
+fake_traps = rand(Poisson(mean_traps)^N)
 
-fake_data = rand(simple_poisson(ɑ = 0.0, β = 1.0, traps = fake_traps));
+fake_data = rand(simple_poisson(traps = fake_traps))
 fake_complaints = collect(fake_data.complaints);
 ```
 

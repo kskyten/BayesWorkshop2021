@@ -32,19 +32,39 @@ Create a dataset to feed into the model.
 Now we run our NB regression over the fake data and extract the samples to examine posterior predictive checks and to check whether we've sufficiently recovered our known parameters, $\text{alpha}$ $\texttt{beta}$, .
 
 ```julia
+using Soss
+using MeasureTheory
 
+multiple_NB_regression = @model (traps, live_in_super, log_sq_foot) begin
+    alpha ∼ Normal(log(4), 1)
+    beta ∼ Normal(-0.25, 1)
+    beta_super ∼ Normal(-0.5, 1)
+    inv_phi ∼ Normal(0, 1)
+
+    complaints ∼ For(eachindex(traps)) do i
+        # TODO: Log parametrization
+        r = exp(alpha + beta * traps[i] + beta_super * live_in_super[i] + log_sq_foot[i])
+        p = inv(inv_phi)
+        # NegativeBinomial(r, p)
+    end
+end
 ```
 
 Construct the vector of true values from your simulated dataset and compare to the recovered parameters.
 
 ```julia
-
+using SampleChainsDynamicHMC
+fake_post = sample(multiple_NB_regression(fake_obs) | (complaints=fake_complaints,), dynamichmc())
+```
+```julia
+include("../../src/bayesplot.jl")
+mcmc_recover_hist(fake_post, (α = 0.0, β = 1.0))
 ```
 
 ### Fit to real data and check the fit
 
 ```julia
-
+post = sample(multiple_NB_regression(pest_data) | (complaints=pest_data.complaints,), dynamichmc())
 ```
 
 Let's look at our predictions vs. the data.
