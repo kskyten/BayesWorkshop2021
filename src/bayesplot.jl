@@ -19,30 +19,31 @@ function mcmc_recover_hist(posterior, true_parameters; kwargs...)
     bayesplot.mcmc_recover_hist(df, true_params; kwargs...)
 end
 
+function _ppc_conv(y, yrep::Vector{<:NamedTuple})
+    @assert length(first(yrep)) == 1
+    @assert length(y) == length(yrep[1][1])
+    ymat = transpose(reduce(hcat, map(first, yrep)))
+    (y, ymat)
+end
+
 function ppc_dens_overlay(y, yrep; kwargs...)
-    # TableTraits.isiterabletable(yrep) || error("Argument `yrep` is not an iterable table.")
-    @assert length(y) == size(yrep, 2)
-    bayesplot.ppc_dens_overlay(y, DataFrame(yrep); kwargs...)
+    bayesplot.ppc_dens_overlay(_ppc_conv(y, yrep)...; kwargs...)
 end
 
 function ppc_rootogram(y, yrep; kwargs...)
-    @assert length(y) == size(yrep, 2)
-    bayesplot.ppc_rootogram(y, DataFrame(yrep); kwargs...)
+    bayesplot.ppc_rootogram(_ppc_conv(y, yrep)...; kwargs...)
 end
 
 function ppc_stat(y, yrep; kwargs...)
-    @assert length(y) == size(yrep, 2)
-    bayesplot.ppc_stat(y, DataFrame(yrep); kwargs...)
+    bayesplot.ppc_stat(_ppc_conv(y, yrep)...; kwargs...)
 end
 
 function ppc_intervals(y, yrep; kwargs...)
-    @assert length(y) == size(yrep, 2)
-    bayesplot.ppc_intervals(y, DataFrame(yrep); kwargs...)
+    bayesplot.ppc_intervals(_ppc_conv(y, yrep)...; kwargs...)
 end
 
 function ppc_stat_grouped(y, yrep; kwargs...)
-    @assert length(y) == size(yrep, 2)
-    bayesplot.ppc_stat_grouped(y, DataFrame(yrep); kwargs...)
+    bayesplot.ppc_stat_grouped(_ppc_conv(y, yrep)...; kwargs...)
 end
 
 function mcmc_hist(x; kwargs...)
