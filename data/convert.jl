@@ -23,6 +23,11 @@ end
 function tojulia()
     pest_data = load("pest_data.rds")
     pest_data.date = convert.(Date, pest_data.date)
+    pest_data.floors = convert.(Int, pest_data.floors)
+    pest_data.age_of_building = convert.(Int, pest_data.age_of_building)
+    pest_data.month = convert.(Int, pest_data.month)
+    pest_data.traps = convert.(Int, pest_data.traps)
+    pest_data.complaints = convert.(Int, pest_data.complaints)
     pest_data.live_in_super = convert.(Bool, pest_data.live_in_super)
     Feather.write("pest_data.feather", pest_data)
 end
