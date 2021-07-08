@@ -7,9 +7,7 @@ date:
 <!-- ## Setup -->
 
 ```julia; echo=false; results="hidden"
-# using TransformVariables, LogDensityProblems, DynamicHMC
-using Random, Feather
-
+using Random
 Random.seed!(Random.GLOBAL_RNG, 123)
 ```
 
@@ -81,6 +79,7 @@ load the data and see what the structure is:
 
 ```julia
 using Dates
+using Feather
 pest_data = Feather.read(joinpath(@__DIR__, "../../data/pest_data.feather"))
 pest_data.date = convert.(Date, pest_data.date);
 ```
@@ -136,24 +135,30 @@ pest_data |>
 )
 ```
 
-```r
-ggplot(pest_data, aes(x = complaints)) +
-  geom_bar()
+```julia
+using RCall
+ggplot = rimport("ggplot2")
 
-ggplot(pest_data, aes(x = traps, y = complaints, color = live_in_super == TRUE)) +
-  geom_jitter()
+ggplot.ggplot(pest_data, ggplot.aes(x = :complaints)) + ggplot.geom_bar()
 ```
 
-```r
-ggplot(pest_data, aes(x = date, y = complaints, color = live_in_super == TRUE)) +
-  geom_line(aes(linetype = "Number of complaints")) +
-  geom_point(color = "black") +
-  geom_line(aes(y = traps, linetype = "Number of traps"), color = "black", size = 0.25) +
-  facet_wrap(~building_id, scales = "free", ncol = 2, labeller = label_both) +
-  scale_x_date(name = "Month", date_labels = "%b") +
-  scale_y_continuous(name = "", limits = range(pest_data$complaints)) +
-  scale_linetype_discrete(name = "") +
-  scale_color_discrete(name = "Live-in super")
+```julia
+ggplot.ggplot(pest_data, ggplot.aes(x = :traps, y = :complaints, color = :live_in_super == true)) + ggplot.geom_jitter()
+```
+
+```julia
+# R"""
+# library(ggplot2)
+# ggplot(pest_data, aes(x = date, y = complaints, color = live_in_super == TRUE)) +
+#   geom_line(aes(linetype = "Number of complaints")) +
+#   geom_point(color = "black") +
+#   geom_line(aes(y = traps, linetype = "Number of traps"), color = "black", size = 0.25) +
+#   facet_wrap(~building_id, scales = "free", ncol = 2, labeller = label_both) +
+#   scale_x_date(name = "Month", date_labels = "%b") +
+#   scale_y_continuous(name = "", limits = range(pest_data$complaints)) +
+#   scale_linetype_discrete(name = "") +
+#   scale_color_discrete(name = "Live-in super")
+# """
 ```
 
 
@@ -231,7 +236,7 @@ our model.
 ```julia
 N = size(pest_data, 1)
 mean_traps = mean(pest_data.traps)
-fake_traps = rand.((Poisson(10) for x in 1:N));
+fake_traps = rand.((Poisson(mean_traps) for x in 1:N));
 
 fake_data = rand(simple_poisson(ɑ = 0.0, β = 1.0, traps = fake_traps));
 fake_complaints = collect(fake_data.complaints);
@@ -255,7 +260,11 @@ the `alpha` and `beta` parameters used in the simulation.
 
 ```julia
 include("../../src/bayesplot.jl")
-mcmc_recover_hist(fake_post, (α = 0.0, β = 1.0))
+
+```
+
+```julia
+mcmc_recover_hist(fake_post, (α = fake_data.α, β = fake_data.β))
 ```
 
 We don't do a great job recovering the parameters here simply because we're
@@ -272,10 +281,23 @@ are a good resource on this topic.)
 
 Here is a plot of the density estimate of the observed data compared to
 200 of the `y_rep` datasets:
-```r
-y_rep <- as.matrix(fit_model_P, pars = "y_rep")
-ppc_dens_overlay(y = stan_dat_fake$complaints, yrep = y_rep[1:200, ])
+
+```julia
+function posterior_predictive(model, posterior_draws; kwargs...)
+    pred = predictive(model, keys(first(posterior_draws))...)(; kwargs...)
+    [rand(pred(draw)) for draw in posterior_draws]
+end
 ```
+
+
+```julia
+yrep = posterior_predictive(simple_poisson, fake_post; traps=fake_traps)
+```
+
+```julia
+ppc_dens_overlay(fake_complaints, yrep[1:200])
+```
+
 In the plot above we have the kernel density estimate of the observed data ($y$,
 thicker curve) and 200 simulated data sets ($y_{rep}$, thin curves) from the
 posterior predictive distribution. If the model fits the data well, as it does
@@ -287,8 +309,8 @@ expected counts (continuous line) vs the observed counts (blue histogram). We
 can see the model fits well because the observed histogram matches the expected
 counts relatively well.
 
-```r
-ppc_rootogram(stan_dat_fake$complaints, yrep = y_rep)
+```julia
+ppc_rootogram(fake_complaints, yrep[1:200])
 ```
 
 
@@ -298,21 +320,7 @@ To fit the model to the actual observed data we'll first create a list to pass
 to Stan using the variables in the `pest_data` data frame:
 
 ```julia
-post = dynamicHMC(simple_poisson(traps=pest_data.traps), (complaints=pest_data.complaints,))
-```
-
-```r
-stan_dat_simple <- list(
-  N = nrow(pest_data),
-  complaints = pest_data$complaints,
-  traps = pest_data$traps
-)
-```
-
-As we have already compiled the model, we can jump straight to sampling from it.
-
-```r
-fit_P_real_data <- sampling(comp_model_P, data = stan_dat_simple)
+post = sample(simple_poisson(traps=pest_data.traps) | (complaints=pest_data.complaints,), dynamichmc())
 ```
 
 and printing the parameters. What do these tell us?
@@ -334,12 +342,12 @@ following month. However, we still need to consider how well the model fits.
 
 ### Posterior predictive checking
 
-```r
-y_rep <- as.matrix(fit_P_real_data, pars = "y_rep")
+```julia
+yrep = posterior_predictive(simple_poisson, post; traps=pest_data.traps)
 ```
 
-```r
-ppc_dens_overlay(y = stan_dat_simple$complaints, y_rep[1:200,])
+```julia
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 ```
 
 As opposed to when we fit the model to simulated data above, here the simulated
@@ -349,10 +357,15 @@ this data.
 
 Let's explore this further by looking directly at the proportion of zeros in the
 real data and predicted data.
-```r
+
+```julia
+R"""
 prop_zero <- function(x) mean(x == 0)
-ppc_stat(y = stan_dat_simple$complaints, yrep = y_rep, stat = "prop_zero")
+"""
+
+ppc_stat(pest_data.complaints, yrep, stat = "prop_zero")
 ```
+
 The plot above shows the observed proportion of zeros (thick vertical line) and
 a histogram of the proportion of zeros in each of the simulated data sets. It is
 clear that the model does not capture this feature of the data well at all.
@@ -373,8 +386,8 @@ The rootogram is another useful plot to compare the observed vs expected number
 of complaints. This is a plot of the expected counts (continuous line) vs the
 observed counts (blue histogram):
 
-```r
-ppc_rootogram(stan_dat_simple$complaints, yrep = y_rep)
+```julia
+ppc_rootogram(pest_data.complaints, yrep)
 ```
 
 If the model was fitting well these would be relatively similar, however in this
@@ -386,13 +399,8 @@ We can also view how the predicted number of complaints varies with the number
 of traps. From this we can see that the model doesn't seem to fully capture the
 data.
 
-```r
-ppc_intervals(
-  y = stan_dat_simple$complaints,
-  yrep = y_rep,
-  x = stan_dat_simple$traps
-) +
-  labs(x = "Number of traps", y = "Number of complaints")
+```julia
+ppc_intervals(pest_data.complaints, yrep, x = pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
 ```
 
 Specifically, the model doesn't capture the tails of the observed data very
