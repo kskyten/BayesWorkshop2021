@@ -1,11 +1,19 @@
 # Bayes Workshop
 
+## Dependencies
+
+You need to install the R dependencies either through your system R or using
+Conda. The Conda installation can be done using the `install_soss_deps` function
+in `scripts/install_deps.jl`
+
+## Generating the notebooks
+
+Run `scripts/weave.jl`to generate Jupyter notebooks to `notebooks/{RCall,Soss}`.
+
+## Code
+
 The original Stan code is in `src/stan`. The untested translations are in
-`src/{soss,turing}`. The original workshop in R can be run with `RCall` and is
-located in `src/weave/RCall`. You need to install the R dependencies first
-with `scripts/install_rstan.jl`. The sources for the Soss notebooks are in
-`src/weave/Soss`. The script `scripts/weave.jl` converts the Weave notebooks to
-Jupyter notebooks.
+`src/{soss,turing}`. The notebook sources are located under `src/weave`.
 
 ## Acknowledgement and License
 
