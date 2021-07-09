@@ -149,13 +149,31 @@ Then we print the fits for the parameters that are of most interest.
 You can see that the effective samples are quite low for many of the parameters relative to the total number of samples. This alone isn't indicative of the need to reparameterize, but it indicates that we should look further at the trace plots and pairs plots. First let's look at the traceplots to see if the divergent transitions form a pattern.
 
 ```julia
+mcmc_trace(post.sigma_mu, np=nuts_params())
 
+R"""
+# use as.array to keep the markov chains separate for trace plots
+mcmc_trace(
+  as.array(fitted_model_NB_hier,pars = 'sigma_mu'),
+  np = nuts_params(fitted_model_NB_hier),
+  window = c(500,1000)
+)
+"""
 ```
 
 Looks as if the divergent parameters, the little red bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
 
 ```julia
-
+R"""
+# assign to object so we can compare to another plot later
+scatter_with_divs <- mcmc_scatter(
+  as.array(fitted_model_NB_hier),
+  pars = c("mu[4]", 'sigma_mu'),
+  transform = list('sigma_mu' = "log"),
+  np = nuts_params(fitted_model_NB_hier)
+)
+scatter_with_divs
+"""
 ```
 
 What we have here is a cloud-like shape, with most of the divergences clustering towards the bottom. We'll see a bit later that we actually want this to look more like a funnel than a cloud, but the divergences are indicating that the sampler can't explore the narrowing neck of the funnel.
@@ -163,7 +181,17 @@ What we have here is a cloud-like shape, with most of the divergences clustering
 One way to see why we should expect some version of a funnel is to look at some simulations from the prior, which we can do without MCMC and thus with no risk of sampling problems:
 
 ```julia
-
+R"""
+N_sims <- 1000
+log_sigma <- rep(NA, N_sims)
+theta <- rep(NA, N_sims)
+for (j in 1:N_sims) {
+  log_sigma[j] <- rnorm(1, mean = 0, sd = 1)
+  theta[j] <- rnorm(1, mean = 0, sd = exp(log_sigma[j]))
+}
+draws <- cbind("mu" = theta, "log(sigma_mu)" = log_sigma)
+mcmc_scatter(draws)
+"""
 ```
 
 Of course, if the data is at all informative we shouldn't expect the posterior to look exactly like the prior. But unless the data is incredibly informative about the parameters and the posterior concentrates away from the narrow neck of the funnel, the sampler is going to have to confront the funnel geometry. (See the [Visual MCMC Diagnostics](http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html) vignette for more on this.)
@@ -171,8 +199,13 @@ Of course, if the data is at all informative we shouldn't expect the posterior t
 Another way to look at the divergences is via a parallel coordinates plot:
 
 ```julia
-
-
+R"""
+parcoord_with_divs <- mcmc_parcoord(
+  as.array(fitted_model_NB_hier, pars = c("sigma_mu", "mu")),
+  np = nuts_params(fitted_model_NB_hier)
+)
+parcoord_with_divs
+"""
 ```
 
 Again, we see evidence that our problems concentrate when $\texttt{sigma_mu}$ is small.
@@ -209,11 +242,27 @@ Examining the fit of the new model
 This has improved the effective sample sizes of $\texttt{mu}$. We extract the parameters to run our usual posterior predictive checks.
 
 ```julia
-
+R"""
+scatter_no_divs <- mcmc_scatter(
+  as.array(fitted_model_NB_hier_ncp),
+  pars = c("mu[4]", 'sigma_mu'),
+  transform = list('sigma_mu' = "log"),
+  np = nuts_params(fitted_model_NB_hier_ncp)
+)
+bayesplot_grid(scatter_with_divs, scatter_no_divs,
+               grid_args = list(ncol = 2), ylim = c(-11, 1))
+"""
 ```
 
 ```julia
-
+R"""
+parcoord_no_divs <- mcmc_parcoord(
+  as.array(fitted_model_NB_hier_ncp, pars = c("sigma_mu", "mu")),
+  np = nuts_params(fitted_model_NB_hier_ncp)
+)
+bayesplot_grid(parcoord_with_divs, parcoord_no_divs,
+               ylim = c(-3, 3))
+"""
 ```
 
 ```julia
@@ -223,38 +272,65 @@ This has improved the effective sample sizes of $\texttt{mu}$. We extract the pa
 The marginal plot, again.
 
 ```julia
-
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 ```
 
 This looks quite nice. If we've captured the building-level means well, then the posterior distribution of means by building should match well with the observed means of the quantity of building complaints by month.
 
 ```julia
-
+R"""
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'mean',
+  binwidth = 0.5
+)
+"""
 ```
 
 We weren't doing terribly with the building-specific means before, but now they are all well-captured by our model. The model is also able to do a decent job estimating within-building variability:
 
 ```julia
-
-
+R"""
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'sd',
+  binwidth = 0.5
+)
+"""
 ```
 
 Predictions by number of traps:
 
 ```julia
-
+R"""
+ppc_intervals(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  x = stan_dat_hier$traps
+) +
+  labs(x = "Number of traps", y = "Number of complaints")
+"""
 ```
 
 Standardized residuals:
 
 ```julia
-
+R"""
+mean_y_rep <- colMeans(y_rep)
+mean_inv_phi <- mean(as.matrix(fitted_model_NB_hier_ncp, pars = "inv_phi"))
+std_resid <- (stan_dat_hier$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
+qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+"""
 ```
 
 Rootogram:
 
 ```julia
-
+ppc_rootogram(pest_data.complaints, yrep)
 
 ```
 
@@ -289,7 +365,12 @@ Fit the model to data and extract the posterior draws needed for our posterior p
 To see if the model infers building-to-building differences in, we can plot a histogram of our marginal posterior distribution for `sigma_kappa`.
 
 ```julia
-
+R"""
+mcmc_hist(
+  as.matrix(fitted_model_NB_hier_slopes, pars = "sigma_kappa"),
+  binwidth = 0.005
+)
+"""
 ```
 
 ```julia
@@ -297,11 +378,16 @@ To see if the model infers building-to-building differences in, we can plot a hi
 ```
 
 ```julia
-
+R"""
+mcmc_hist(
+  as.matrix(fitted_model_NB_hier_slopes, pars = "beta"),
+  binwidth = 0.005
+)
+"""
 ```
 
 While the model can't specifically rule out zero from the posterior, it does have mass at small non-zero numbers, so we should leave in the hierarchy over $\texttt{kappa}$. Plotting the marginal data density again, we can see the model still looks well calibrated.
 
 ```julia
-
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 ```

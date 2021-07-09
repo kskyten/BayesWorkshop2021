@@ -3,7 +3,15 @@
 We haven't looked at how cockroach complaints change over time. Let's look at whether there's any pattern over time.
 
 ```julia
-
+R"""
+select_vec <- which(stan_dat_hier$mo_idx %in% 1:12)
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints[select_vec],
+  yrep = y_rep[,select_vec],
+  group = stan_dat_hier$mo_idx[select_vec],
+  stat = 'mean'
+) + xlim(0, 11)
+"""
 ```
 
 We might augment our model with a log-additive monthly effect, $\texttt{mo}_t$.
@@ -107,17 +115,50 @@ In the interest of brevity, we won't go on expanding the model, though we certai
 As usual, we run through our posterior predictive checks.
 
 ```julia
-
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 ```
 
 ```julia
-
+R"""
+select_vec <- which(stan_dat_hier$mo_idx %in% 1:12)
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints[select_vec],
+  yrep = y_rep[,select_vec],
+  group = stan_dat_hier$mo_idx[select_vec],
+  stat = 'mean'
+)
+"""
 ```
 
 As we can see, our monthly random intercept has captured a monthly pattern across all the buildings. We can also compare the prior and posterior for the autoregressive parameter to see how much we've learned. Here are two different ways of comparing the prior and posterior visually:
 
 ```julia
+R"""
+# 1) compare draws from prior and draws from posterior
+rho_draws <- cbind(
+  2 * rbeta(4000, 10, 5) - 1, # draw from prior
+  as.matrix(fitted_model_NB_hier_mos, pars = "rho")
+)
+colnames(rho_draws) <- c("prior", "posterior")
+mcmc_hist(rho_draws, freq = FALSE, binwidth = 0.025,
+          facet_args = list(nrow = 2)) + xlim(-1, 1)
 
+
+# 2) overlay prior density curve on posterior draws
+gen_rho_prior <- function(x) {
+  alpha <- 10; beta <- 5
+  a <- -1; c <- 1
+  lp <- (alpha - 1) * log(x - a) +
+        (beta - 1) * log(c - x) -
+        (alpha + beta - 1) * log(c - a) -
+         lbeta(alpha, beta)
+  return(exp(lp))
+}
+mcmc_hist(as.matrix(fitted_model_NB_hier_mos, pars = "rho"),
+          freq = FALSE, binwidth = 0.01) +
+  overlay_function(fun = gen_rho_prior) +
+  xlim(-1,1)
+"""
 ```
 
 
