@@ -219,8 +219,8 @@ simple_poisson = @model traps begin
     β ~ Normal(-0.25, .1)
 
     complaints ~ For(eachindex(traps)) do i
-        λ = exp(α + β * traps[i])
-        Poisson(λ)
+        logλ = α + β * traps[i]
+        Poisson(;logλ)
     end
 end
 ```
