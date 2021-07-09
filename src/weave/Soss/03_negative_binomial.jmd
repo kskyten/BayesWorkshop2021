@@ -52,25 +52,50 @@ end
 Construct the vector of true values from your simulated dataset and compare to the recovered parameters.
 
 ```julia
+N = size(pest_data, 1)
+mean_traps = mean(pest_data.traps)
+fake_traps = rand(Poisson(mean_traps)^N)
+fake_obs = (traps = fake_traps,
+    live_in_super = rand(Bernoulli(0.5)^N),
+    log_sq_foot = rand(Normal(1.5, 0.1)^N),
+)
+
+```
+
+```julia
+fake_data = rand(multiple_NB_regression(fake_obs))
+```
+```julia
 using SampleChainsDynamicHMC
-fake_post = sample(multiple_NB_regression(fake_obs) | (complaints=fake_complaints,), dynamichmc())
+fake_post = sample(multiple_NB_regression(fake_obs) | (complaints=fake_data.complaints,), dynamichmc())
 ```
 ```julia
 include("../../src/bayesplot.jl")
-mcmc_recover_hist(fake_post, (α = 0.0, β = 1.0))
+mcmc_recover_hist(fake_post, (alpha = fake_data.alpha,
+    beta = fake_data.beta,
+    beta_super = fake_data.beta_super,
+    inv_phi = fake_data.inv_phi))
 ```
 
 ### Fit to real data and check the fit
 
 ```julia
-post = sample(multiple_NB_regression(pest_data) | (complaints=pest_data.complaints,), dynamichmc())
+obs = (
+    traps = pest_data.traps,
+    live_in_super = pest_data.live_in_super,
+    log_sq_foot = log.(pest_data.sq_footage_p_floor)
+)
+post = sample(multiple_NB_regression(obs) | (complaints=pest_data.complaints,), dynamichmc())
 ```
 
 Let's look at our predictions vs. the data.
 
 ```julia
+yrep = posterior_predictive(multiple_NB_regression, post; obs...)
+```
 
-
+```julia
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 ```
 
 It appears that our model now captures both the number of small counts better as well as the tails.
@@ -78,19 +103,33 @@ It appears that our model now captures both the number of small counts better as
 Let's check if the negative binomial model does a better job capturing the number of zeros:
 
 ```julia
+using RCall
+ggplot = rimport("ggplot2")
 
+R"""
+prop_zero <- function(x) mean(x == 0)
+"""
+
+ppc_stat(pest_data.complaints, yrep, stat = "prop_zero", binwidth = 0.01)
 ```
 
 These look OK, but let's look at the standardized residual plot.
 
 ```julia
 
+R"""
+mean_inv_phi <- mean(samps_NB$inv_phi)
+mean_y_rep <- colMeans(y_rep)
+std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
+qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+"""
+
 ```
 
 Looks OK, but we still have some very large *standardized* residuals. This might be because we are currently ignoring that the data are clustered by buildings, and that the probability of roach issue may vary substantially across buildings.
 
 ```julia
-
+ppc_rootogram(pest_data.complaints, yrep)
 ```
 
 The rootogram now looks much more plausible. We can tell this because now the expected number of complaints matches much closer to the observed number of complaints. However, we still have some larger counts that appear to be outliers for the model.
@@ -98,12 +137,22 @@ The rootogram now looks much more plausible. We can tell this because now the ex
 Check predictions by number of traps:
 
 ```julia
-
+ppc_intervals(pest_data.complaints, yrep, x = pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
 ```
 
 We haven't used the fact that the data are clustered by building yet. A posterior  predictive check might elucidate whether it would be a good idea to add the building information into the model.
 
 ```julia
+
+R"""
+ppc_stat_grouped(
+  y = stan_dat_simple$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'mean',
+  binwidth = 0.2
+)
+"""
 
 ```
 
