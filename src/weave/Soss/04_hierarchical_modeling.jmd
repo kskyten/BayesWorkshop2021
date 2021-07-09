@@ -39,8 +39,64 @@ $$
 We'll need to do some more data prep before we can fit our models. Firstly to use the building variable in Stan we will need to transform it from a factor variable to an integer variable.
 
 ```julia
+using Dates
+using Feather
+pest_data = Feather.read(joinpath(@__DIR__, "../../data/pest_data.feather"))
+pest_data.date = convert.(Date, pest_data.date);
 
+```
 
+```julia
+using RCall
+R"""
+library(dplyr)
+library(lubridate)
+
+pest_data <- readRDS('../../data/pest_data.rds')
+N_buildings <- length(unique(pest_data$building_id))
+"""
+```
+
+```julia
+R"""
+N_months <- length(unique(pest_data$date))
+
+# Add some IDs for building and month
+pest_data <- pest_data %>%
+  mutate(
+    building_fac = factor(building_id, levels = unique(building_id)),
+    building_idx = as.integer(building_fac),
+    ids = rep(1:N_months, N_buildings),
+    mo_idx = lubridate::month(date)
+  )
+"""
+```
+
+```julia
+R"""
+# Center and rescale the building specific data
+building_data <- pest_data %>%
+    select(
+      building_idx,
+      live_in_super,
+      age_of_building,
+      total_sq_foot,
+      average_tenant_age,
+      monthly_average_rent
+    ) %>%
+    unique() %>%
+    arrange(building_idx) %>%
+    select(-building_idx) %>%
+    scale(scale=FALSE) %>%
+    as.data.frame() %>%
+    mutate( # scale by constants
+      age_of_building = age_of_building / 10,
+      total_sq_foot = total_sq_foot / 10000,
+      average_tenant_age = average_tenant_age / 10,
+      monthly_average_rent = monthly_average_rent / 1000
+    ) %>%
+    as.matrix()
+  """
 ```
 
 ### Fit the hierarchical model
