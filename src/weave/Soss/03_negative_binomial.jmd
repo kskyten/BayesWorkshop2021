@@ -32,16 +32,23 @@ Create a dataset to feed into the model.
 Now we run our NB regression over the fake data and extract the samples to examine posterior predictive checks and to check whether we've sufficiently recovered our known parameters, $\text{alpha}$ $\texttt{beta}$, .
 
 ```julia
+using Dates
+using Feather
+pest_data = Feather.read(joinpath(@__DIR__, "../../data/pest_data.feather"))
+pest_data.date = convert.(Date, pest_data.date);
+```
+
+```julia
 using Soss
 using MeasureTheory
 
 multiple_NB_regression = @model (traps, live_in_super, log_sq_foot) begin
-    alpha ∼ Normal(log(4), 1)
-    beta ∼ Normal(-0.25, 1)
-    beta_super ∼ Normal(-0.5, 1)
-    inv_phi ∼ Normal(0, 1)
+    alpha ~ Normal(log(4), 1)
+    beta ~ Normal(-0.25, 1)
+    beta_super ~ Normal(-0.5, 1)
+    inv_phi ~ Normal(0, 1)
 
-    complaints ∼ For(eachindex(traps)) do i
+    complaints ~ For(eachindex(traps)) do i
         logλ = alpha + beta * traps[i] + beta_super * live_in_super[i] + log_sq_foot[i]
         r = inv(inv_phi)
         NegativeBinomial(;r, logλ)
