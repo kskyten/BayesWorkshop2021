@@ -584,7 +584,7 @@ uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
 
 [[MeasureTheory]]
 deps = ["Accessors", "ArrayInterface", "ConcreteStructs", "ConstructionBase", "Distributions", "DynamicIterators", "FillArrays", "InfiniteArrays", "KeywordCalls", "LinearAlgebra", "MLStyle", "MacroTools", "MappedArrays", "MonteCarloMeasurements", "NamedTupleTools", "NestedTuples", "PositiveFactorizations", "Random", "SimpleTraits", "SpecialFunctions", "StaticArrays", "StatsFuns", "TransformVariables", "Tricks", "Tullio"]
-git-tree-sha1 = "d236b5f7c6a0262e3428e33ba1b7c95df455f027"
+git-tree-sha1 = "4b36e667bf1560006b34fb9af7d0be1f996f7460"
 repo-rev = "master"
 repo-url = "https://github.com/cscherrer/MeasureTheory.jl.git"
 uuid = "eadaa1a4-d27c-401d-8699-e962e1bbc33b"
