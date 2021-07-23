@@ -1,4 +1,5 @@
 [deps]
+ArviZ = "131c737c-5715-5e2e-ad31-c244f01c1dc7"
 Conda = "8f4d0f93-b110-5947-807f-2305c1781a2d"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Feather = "becb17da-46f6-5d3c-ad1b-1c5fe96bc73c"
