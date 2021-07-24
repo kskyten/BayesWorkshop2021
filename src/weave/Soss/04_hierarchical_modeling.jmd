@@ -43,7 +43,36 @@ using Dates
 using Feather
 pest_data = Feather.read(joinpath(@__DIR__, "../../data/pest_data.feather"))
 pest_data.date = convert.(Date, pest_data.date);
+```
 
+```julia
+using DataFrames
+using CategoricalArrays
+using Dates
+
+pest_data.building_fac = categorical(pest_data.building_id)
+pest_data.building_idx = levelcode.(pest_data.building_fac)
+
+pest_data.mo_idx = month.(pest_data.date)
+n_months = length(unique(pest_data.date))
+n_buildings = length(unique(pest_data.building_id))
+pest_data.ids = repeat(1:n_months, n_buildings)
+```
+
+```julia
+using MLDataUtils
+
+building_data = pest_data[:, [:building_idx, :live_in_super, :age_of_building, :total_sq_foot,
+        :average_tenant_age, :monthly_average_rent]]
+building_data = select(sort(unique(building_data), :building_idx), Not(:building_idx))
+μ = center!(building_data)
+
+building_data.age_of_building = building_data.age_of_building ./ 10
+building_data.total_sq_foot = building_data.total_sq_foot ./ 10000
+building_data.average_tenant_age = building_data.average_tenant_age ./ 10
+building_data.monthly_average_rent = building_data.monthly_average_rent ./ 1000;
+
+building_data_mat = Matrix(building_data)
 ```
 
 ```julia
@@ -101,24 +130,34 @@ building_data <- pest_data %>%
 
 ### Fit the hierarchical model
 
+```julia
+# TODO: Fix the sorting in the Julia version
+building_data = rcopy(R"building_data")
+```
+
 Fit the model to data.
 
 ```julia
 using Soss
 using MeasureTheory
 
-hier_NB_regression = @model (traps, live_in_super, log_sq_foot) begin
-    # alpha ∼ Normal(log(4), 1)
-    # beta ∼ Normal(-0.25, 1)
-    # beta_super ∼ Normal(-0.5, 1)
-    # inv_phi ∼ Normal(0, 1)
+hier_NB_regression = @model (traps, live_in_super, log_sq_foot, building_idx, building_data) begin
+    # J, K = size(building_data) # does not work
+    K = size(building_data)[2]
 
-    # complaints ∼ For(eachindex(traps)) do i
-    #     # TODO: Log parametrization
-    #     r = exp(alpha + beta * traps[i] + beta_super * live_in_super[i] + log_sq_foot[i])
-    #     p = inv(inv_phi)
-    #     # NegativeBinomial(r, p)
-    # end
+    sigma_mu ~ HalfNormal() # standard deviation of building-specific intercepts
+    alpha ~ Normal(log(4), 1) # intercept of model for mu
+    zeta ~ Normal() |> iid(K)  # coefficients on building-level predictors in model for mu
+    beta ~ Normal(-0.25, 1) # coefficient on traps
+    inv_phi ~ HalfNormal() # 1/phi (easier to think about prior for 1/phi instead of phi)
+
+    mu ~ MvNormal(alpha + building_data * zeta, sigma_mu)
+
+    complaints ∼ For(eachindex(traps)) do i
+        r = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
+        logλ = inv(inv_phi)
+        NegativeBinomial(;r, logλ)
+    end
 end
 ```
 
@@ -230,7 +269,22 @@ This gives $\texttt{mu}$ a $\text{Normal}(\alpha + \texttt{building_data}\, \zet
 Fit the model to the data.
 
 ```julia
+hier_NB_regression_ncp = @model (traps, live_in_super, log_sq_foot, building_idx, building_data) begin
+    sigma_mu ~ HalfNormal(0, 1)
+    alpha ~ Normal(log(4), 1)
+    zeta ~ Normal(0, 1)  # could also use informative priors on the different elements
+    beta ~ Normal(-0.25, 1)
+    inv_phi ~ HalfNormal(1)
+    mu_raw ~ Normal()
 
+    mu  = alpha + building_data * zeta + sigma_mu * mu_raw
+
+    complaints ∼ For(eachindex(traps)) do i
+        r = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
+        logλ = inv(inv_phi)
+        NegativeBinomial(;r, logλ)
+    end
+end
 ```
 
 Examining the fit of the new model
@@ -359,7 +413,27 @@ $$
 Fit the model to data and extract the posterior draws needed for our posterior predictive checks.
 
 ```julia
+hier_NB_regression_ncp_slopes = @model (traps, live_in_super, log_sq_foot, building_idx, building_data) begin
+    kappa_raw ~ Normal()
+    sigma_kappa ~ HalfNormal()
+    gamma ~ Normal()
 
+    sigma_mu ~ HalfNormal()
+    alpha ~ Normal(log(4), 1)
+    zeta ~ Normal()  # could also use informative priors on the different elements
+    beta ~ Normal(-0.25, 1)
+    inv_phi ~ HalfNormal()
+    mu_raw ~ Normal()
+
+    mu  = alpha + building_data * zeta + sigma_mu * mu_raw
+    kappa = beta + building_data * gamma + sigma_kappa * kappa_raw;
+
+    complaints ∼ For(eachindex(traps)) do i
+        r = mu[building_idx] + kappa[building_idx] * traps[i] + log_sq_foot[i]
+        logλ = inv(inv_phi)
+        NegativeBinomial(;r, logλ)
+    end
+end
 ```
 
 To see if the model infers building-to-building differences in, we can plot a histogram of our marginal posterior distribution for `sigma_kappa`.
