@@ -79,7 +79,7 @@ R"""
 library(dplyr)
 library(lubridate)
 
-pest_data <- readRDS('$(datadir())/pest_data.rds')
+pest_data <- readRDS('../../data/pest_data.rds')
 N_buildings <- length(unique(pest_data$building_id))
 """
 ```
@@ -149,14 +149,27 @@ hier_NB_regression = @model (traps, live_in_super, log_sq_foot, building_idx, bu
     beta ~ Normal(-0.25, 1) # coefficient on traps
     inv_phi ~ HalfNormal() # 1/phi (easier to think about prior for 1/phi instead of phi)
 
-    mu ~ MvNormal(alpha + building_data * zeta, sigma_mu)
+    mu ~ MvNormal(alpha .+ building_data * zeta, sigma_mu)
 
-    complaints ∼ For(eachindex(traps)) do i
+    complaints ~ For(eachindex(traps)) do i
         r = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
         logλ = inv(inv_phi)
         NegativeBinomial(;r, logλ)
     end
 end
+```
+
+```julia
+using SampleChainsDynamicHMC
+obs = (
+    traps = pest_data.traps,
+    live_in_super = pest_data.live_in_super,
+    log_sq_foot = log.(pest_data.sq_footage_p_floor),
+    building_idx = pest_data.building_idx,
+    building_data = building_data
+)
+post = sample(hier_NB_regression(obs) | (complaints=pest_data.complaints,), dynamichmc())
+
 ```
 
 ### Diagnostics
@@ -268,16 +281,18 @@ Fit the model to the data.
 
 ```julia
 hier_NB_regression_ncp = @model (traps, live_in_super, log_sq_foot, building_idx, building_data) begin
-    sigma_mu ~ HalfNormal(0, 1)
+    K = size(building_data)[2]
+
+    sigma_mu ~ HalfNormal()
     alpha ~ Normal(log(4), 1)
-    zeta ~ Normal(0, 1)  # could also use informative priors on the different elements
+    zeta ~ Normal() |> iid(K)  # could also use informative priors on the different elements
     beta ~ Normal(-0.25, 1)
-    inv_phi ~ HalfNormal(1)
+    inv_phi ~ HalfNormal()
     mu_raw ~ Normal()
 
-    mu  = alpha + building_data * zeta + sigma_mu * mu_raw
+    mu  = alpha .+ building_data * zeta .+ sigma_mu * mu_raw
 
-    complaints ∼ For(eachindex(traps)) do i
+    complaints ~ For(eachindex(traps)) do i
         r = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
         logλ = inv(inv_phi)
         NegativeBinomial(;r, logλ)
@@ -423,11 +438,11 @@ hier_NB_regression_ncp_slopes = @model (traps, live_in_super, log_sq_foot, build
     inv_phi ~ HalfNormal()
     mu_raw ~ Normal()
 
-    mu  = alpha + building_data * zeta + sigma_mu * mu_raw
-    kappa = beta + building_data * gamma + sigma_kappa * kappa_raw;
+    mu  = alpha .+ building_data * zeta .+ sigma_mu * mu_raw
+    kappa = beta .+ building_data * gamma .+ sigma_kappa * kappa_raw;
 
-    complaints ∼ For(eachindex(traps)) do i
-        r = mu[building_idx] + kappa[building_idx] * traps[i] + log_sq_foot[i]
+    complaints ~ For(eachindex(traps)) do i
+        r = mu[building_idx[i]] + kappa[building_idx[i]] * traps[i] + log_sq_foot[i]
         logλ = inv(inv_phi)
         NegativeBinomial(;r, logλ)
     end
