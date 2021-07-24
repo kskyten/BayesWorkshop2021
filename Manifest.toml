@@ -230,6 +230,12 @@ version = "0.8.5"
 deps = ["ArgTools", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 
+[[DrWatson]]
+deps = ["Dates", "FileIO", "LibGit2", "MacroTools", "Pkg", "Random", "Requires", "UnPack"]
+git-tree-sha1 = "727c251837ae0e9881f60a19e7d6ac3a15a72c40"
+uuid = "634d3b9d-ee7a-5ddf-bec9-22491ea816e1"
+version = "2.1.1"
+
 [[DynamicHMC]]
 deps = ["ArgCheck", "DocStringExtensions", "LinearAlgebra", "LogDensityProblems", "Parameters", "ProgressMeter", "Random", "Statistics"]
 git-tree-sha1 = "b60dcde7440787fb21cd8347edc5623cb89aace8"

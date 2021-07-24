@@ -1,3 +1,8 @@
+```julia; echo=false; results="hidden"
+using DrWatson
+@quickactivate "BayesWorkshop2021"
+include(joinpath(srcdir(), "setup.jl"));
+```
 ## Modeling count data with the Negative Binomial
 
 When we considered modelling the data using a Poisson, we saw that the model didn't appear to fit as well to the data as we would like. In particular the model underpredicted low and high numbers of complaints, and overpredicted the medium number of complaints. This is one indication of over-dispersion, where the variance is larger than the mean. A Poisson model doesn't fit over-dispersed count data very well because the same parameter $\lambda$, controls both the expected counts and the variance of these counts. The natural alternative to this is the negative binomial model:
@@ -30,13 +35,6 @@ We're going to generate one draw from the fake data model so we can use the data
 Create a dataset to feed into the model.
 
 Now we run our NB regression over the fake data and extract the samples to examine posterior predictive checks and to check whether we've sufficiently recovered our known parameters, $\text{alpha}$ $\texttt{beta}$, .
-
-```julia
-using Dates
-using Feather
-pest_data = Feather.read(joinpath(@__DIR__, "../../data/pest_data.feather"))
-pest_data.date = convert.(Date, pest_data.date);
-```
 
 ```julia
 using Soss
@@ -77,7 +75,6 @@ using SampleChainsDynamicHMC
 fake_post = sample(multiple_NB_regression(fake_obs) | (complaints=fake_data.complaints,), dynamichmc())
 ```
 ```julia
-include("../../src/bayesplot.jl")
 mcmc_recover_hist(fake_post, (alpha = fake_data.alpha,
     beta = fake_data.beta,
     beta_super = fake_data.beta_super,
