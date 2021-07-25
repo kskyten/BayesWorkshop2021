@@ -54,13 +54,11 @@ end
 
 but this would lead to type-unstable code and hence a loss in performance.
 
-# Using Soss models
+# Using Turing models
 
 Once we have defined a model, we can assign values to the unbound parameters to define a joint distribution. Values can be assigned by calling the generated model function with keyword arguments. Once all the parameters are bound, we have a fully defined joint distribution.
 
-# The Bayesian workflow in Soss
-
-## Model transformations
+# The Bayesian workflow in Turing
 
 ## Prior predictive
 
