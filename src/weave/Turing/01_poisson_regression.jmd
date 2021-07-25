@@ -134,7 +134,7 @@ ggplot.ggplot(pest_data, ggplot.aes(x = :complaints)) + ggplot.geom_bar()
 ```
 
 ```julia
-ggplot.ggplot(pest_data, ggplot.aes(x = :traps, y = :complaints, color = :live_in_super == true)) + ggplot.geom_jitter()
+ggplot.ggplot(pest_data, ggplot.aes(x = :traps, y = :complaints, color = :live_in_super)) + ggplot.geom_jitter()
 ```
 
 The first question we'll look at is just whether the number of complaints per
@@ -326,11 +326,7 @@ Let's explore this further by looking directly at the proportion of zeros in the
 real data and predicted data.
 
 ```julia
-R"""
-prop_zero <- function(x) mean(x == 0)
-"""
-
-ppc_stat(pest_data.complaints, yrep, stat = "prop_zero")
+ppc_stat(pest_data.complaints, yrep, stat = R"function(x) mean(x == 0)")
 ```
 
 The plot above shows the observed proportion of zeros (thick vertical line) and
@@ -339,10 +335,13 @@ clear that the model does not capture this feature of the data well at all.
 
 This next plot is a plot of the standardised residuals of the observed vs predicted number of complaints.
 
-```r
-mean_y_rep <- colMeans(y_rep)
-std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep)
-qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+```julia
+# Convert into a matrix of size `(num_variables, num_samples)`
+yrep_matrix = mapreduce(hcat, yrep) do y
+    y.complaints
+end;
+
+qqnorm(dropdims(mean(yrep_matrix; dims=2); dims=2), qqline=:R)
 ```
 
 As you can see here, it looks as though we have more positive residuals than negative,
