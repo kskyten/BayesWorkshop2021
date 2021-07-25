@@ -1,0 +1,67 @@
+# Modeling joint distributions using Soss
+
+The goal of Bayesian data analysis is to come up with a plausible explanation for some phenomenon or data in the form of a joint distribution. Defining complicated multivariate distributions outright is extremely difficult, so statistician typically decompose the task into defining conditional distributions and place independence assumptions on the interactions between the random variables.
+
+# Model syntax
+
+Turing syntax is designed to closely resemble the typical mathematical notation for Bayesian models.
+
+## Template for defining Turing models
+
+A Turing model is defined by using the model macro.
+
+```julia
+@model function name_of_the_model(unbound, parameters)
+    # Define your model here
+end
+```
+
+## Univariate random variables
+
+The typical notation $X \sim Normal(\mu, \sigma)$, translates directly to Turing. The objects on the right hand side must implement a `Distributions.rand` and `Distributions.logpdf`.
+
+## Independent and identically distributed random variables
+
+It is common to assume that a collection of random variables are independent and identically distributed. This is commonly abbreviated as iid. In Turing, we declare the iid assumption using the `filldist(dist, n)` function. For example, we could assume 10 iid standard Normal distributions using
+
+```julia
+filldist(Normal(0, 1), 10)
+```
+
+## Loops
+
+To model a random vector, where the components depend on the index, we use `for` loops. In Turing this is just the standard Julia code, but you need to remember to allocate an array to store the variables:
+
+```julia
+@model function demo(::Type{TV} = Vector{Float64})
+    y = TV(undef, J)
+    for j = 1:J
+        Normal(θ[j], σ[j])
+    end
+end
+```
+
+By adding the type-parameter `TV` we allow Turing to internally replace `TV` with types that are compatible with whatever AD framework we're using at the time, e.g. if we're using ForwardDiff.jl (which is the case by default), `TV` is replaced by `Vector{ForwardDiff.Dual{Float64}}`. One could of course just do
+
+```julia
+@model function demo()
+    y = Vector(undef, J)
+    for j = 1:J
+        Normal(θ[j], σ[j])
+    end
+end
+```
+
+but this would lead to type-unstable code and hence a loss in performance.
+
+# Using Soss models
+
+Once we have defined a model, we can assign values to the unbound parameters to define a joint distribution. Values can be assigned by calling the generated model function with keyword arguments. Once all the parameters are bound, we have a fully defined joint distribution.
+
+# The Bayesian workflow in Soss
+
+## Model transformations
+
+## Prior predictive
+
+## Posterior predictive
