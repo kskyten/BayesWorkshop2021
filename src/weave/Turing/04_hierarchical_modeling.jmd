@@ -171,7 +171,7 @@ end
 
 ```julia
 obs = (
-    traps = Array(pest_data.traps),
+    traps = pest_data.traps,
     live_in_super = pest_data.live_in_super,
     log_sq_foot = log.(pest_data.sq_footage_p_floor),
     building_idx = pest_data.building_idx,
