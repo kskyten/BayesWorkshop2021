@@ -8,5 +8,7 @@ include("bayesplot.jl")
 
 using Dates
 using Feather
-pest_data = Feather.read(joinpath(datadir(), "pest_data.feather"))
-pest_data.date = convert.(Date, pest_data.date);
+const pest_data = let data = Feather.read(joinpath(datadir(), "pest_data.feather"))
+    data.date = convert.(Date, data.date);
+    DataFrame((n => Array(data[:, n]) for n in names(data))...)
+end
