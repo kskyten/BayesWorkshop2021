@@ -141,6 +141,7 @@ using MeasureTheory
 
 hier_NB_regression = @model (traps, live_in_super, log_sq_foot, building_idx, building_data) begin
     # J, K = size(building_data) # does not work
+    J = size(building_data)[1]
     K = size(building_data)[2]
 
     sigma_mu ~ HalfNormal() # standard deviation of building-specific intercepts
@@ -149,11 +150,13 @@ hier_NB_regression = @model (traps, live_in_super, log_sq_foot, building_idx, bu
     beta ~ Normal(-0.25, 1) # coefficient on traps
     inv_phi ~ HalfNormal() # 1/phi (easier to think about prior for 1/phi instead of phi)
 
-    mu ~ MvNormal(alpha .+ building_data * zeta, sigma_mu)
+    mu ~ For(1:J) do i
+        Normal((alpha .+ building_data * zeta)[i], sigma_mu)
+    end
 
     complaints ~ For(eachindex(traps)) do i
-        r = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
-        logλ = inv(inv_phi)
+        r = inv(inv_phi)
+        logλ = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
         NegativeBinomial(;r, logλ)
     end
 end
@@ -186,7 +189,19 @@ In this example we will see that we have divergent transitions because we need t
 First let's extract the fits from the model.
 
 ```julia
+using ArviZ
 
+idata = from_samplechains(
+    post;
+    posterior_predictive=postpred,
+    prior=prior_priorpred,
+    prior_predictive=[:y],
+    observed_data=observed_data,
+    constant_data=constant_data,
+    coords=Dict("school" => schools),
+    dims=Dict("y" => ["school"], "σ" => ["school"], "θ" => ["school"]),
+    library=Soss,
+)
 ```
 
 Then we print the fits for the parameters that are of most interest.
@@ -281,6 +296,7 @@ Fit the model to the data.
 
 ```julia
 hier_NB_regression_ncp = @model (traps, live_in_super, log_sq_foot, building_idx, building_data) begin
+    J = size(building_data)[1]
     K = size(building_data)[2]
 
     sigma_mu ~ HalfNormal()
@@ -288,13 +304,13 @@ hier_NB_regression_ncp = @model (traps, live_in_super, log_sq_foot, building_idx
     zeta ~ Normal() |> iid(K)  # could also use informative priors on the different elements
     beta ~ Normal(-0.25, 1)
     inv_phi ~ HalfNormal()
-    mu_raw ~ Normal()
+    mu_raw ~ Normal() |> iid(J)
 
-    mu  = alpha .+ building_data * zeta .+ sigma_mu * mu_raw
+    mu  = alpha .+ building_data * zeta .+ sigma_mu .* mu_raw
 
     complaints ~ For(eachindex(traps)) do i
-        r = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
-        logλ = inv(inv_phi)
+        r = inv(inv_phi)
+        logλ = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
         NegativeBinomial(;r, logλ)
     end
 end
@@ -303,7 +319,7 @@ end
 Examining the fit of the new model
 
 ```julia
-
+post = sample(hier_NB_regression_ncp(obs) | (complaints=pest_data.complaints,), dynamichmc())
 ```
 
 This has improved the effective sample sizes of $\texttt{mu}$. We extract the parameters to run our usual posterior predictive checks.
@@ -427,23 +443,26 @@ Fit the model to data and extract the posterior draws needed for our posterior p
 
 ```julia
 hier_NB_regression_ncp_slopes = @model (traps, live_in_super, log_sq_foot, building_idx, building_data) begin
-    kappa_raw ~ Normal()
+    J = size(building_data)[1]
+    K = size(building_data)[2]
+
+    kappa_raw ~ Normal() |> iid(J)
     sigma_kappa ~ HalfNormal()
-    gamma ~ Normal()
+    gamma ~ Normal() |> iid(K)
 
     sigma_mu ~ HalfNormal()
     alpha ~ Normal(log(4), 1)
-    zeta ~ Normal()  # could also use informative priors on the different elements
+    zeta ~ Normal() |> iid(K)
     beta ~ Normal(-0.25, 1)
     inv_phi ~ HalfNormal()
-    mu_raw ~ Normal()
+    mu_raw ~ Normal() |> iid(J)
 
-    mu  = alpha .+ building_data * zeta .+ sigma_mu * mu_raw
-    kappa = beta .+ building_data * gamma .+ sigma_kappa * kappa_raw;
+    mu  = alpha .+ building_data * zeta .+ sigma_mu .* mu_raw
+    kappa = beta .+ building_data * gamma .+ sigma_kappa .* kappa_raw;
 
     complaints ~ For(eachindex(traps)) do i
-        r = mu[building_idx[i]] + kappa[building_idx[i]] * traps[i] + log_sq_foot[i]
-        logλ = inv(inv_phi)
+        r = inv(inv_phi)
+        logλ = mu[building_idx[i]] + kappa[building_idx[i]] * traps[i] + log_sq_foot[i]
         NegativeBinomial(;r, logλ)
     end
 end
