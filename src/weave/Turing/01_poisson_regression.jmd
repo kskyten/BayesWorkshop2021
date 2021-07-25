@@ -137,22 +137,6 @@ ggplot.ggplot(pest_data, ggplot.aes(x = :complaints)) + ggplot.geom_bar()
 ggplot.ggplot(pest_data, ggplot.aes(x = :traps, y = :complaints, color = :live_in_super == true)) + ggplot.geom_jitter()
 ```
 
-```julia
-# R"""
-# library(ggplot2)
-# ggplot(pest_data, aes(x = date, y = complaints, color = live_in_super == TRUE)) +
-#   geom_line(aes(linetype = "Number of complaints")) +
-#   geom_point(color = "black") +
-#   geom_line(aes(y = traps, linetype = "Number of traps"), color = "black", size = 0.25) +
-#   facet_wrap(~building_id, scales = "free", ncol = 2, labeller = label_both) +
-#   scale_x_date(name = "Month", date_labels = "%b") +
-#   scale_y_continuous(name = "", limits = range(pest_data$complaints)) +
-#   scale_linetype_discrete(name = "") +
-#   scale_color_discrete(name = "Live-in super")
-# """
-```
-
-
 The first question we'll look at is just whether the number of complaints per
 building per month is associated with the number of bait stations per building
 per month, ignoring the temporal and across-building variation (we'll come back
