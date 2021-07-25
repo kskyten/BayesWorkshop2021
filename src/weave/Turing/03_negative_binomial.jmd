@@ -3,6 +3,7 @@ using DrWatson
 @quickactivate "BayesWorkshop2021"
 include(joinpath(srcdir(), "setup.jl"));
 ```
+
 ## Modeling count data with the Negative Binomial
 
 When we considered modelling the data using a Poisson, we saw that the model didn't appear to fit as well to the data as we would like. In particular the model underpredicted low and high numbers of complaints, and overpredicted the medium number of complaints. This is one indication of over-dispersion, where the variance is larger than the mean. A Poisson model doesn't fit over-dispersed count data very well because the same parameter $\lambda$, controls both the expected counts and the variance of these counts. The natural alternative to this is the negative binomial model:
@@ -94,6 +95,9 @@ mcmc_recover_hist(
 ### Fit to real data and check the fit
 
 ```julia
+# Add the `log_sq_foot` as in 02.
+transform!(pest_data, :total_sq_foot => ByRow(total_sq_foot -> log(total_sq_foot / 1e4)) => :log_sq_foot)
+
 obs = (
     traps = pest_data.traps,
     live_in_super = pest_data.live_in_super,
@@ -120,17 +124,18 @@ Let's check if the negative binomial model does a better job capturing the numbe
 using RCall
 ggplot = rimport("ggplot2")
 
-R"""
-prop_zero <- function(x) mean(x == 0)
-"""
-
-ppc_stat(pest_data.complaints, yrep, stat = "prop_zero", binwidth = 0.01)
+ppc_stat(pest_data.complaints, yrep, stat = R"function(x) mean(x == 0)", binwidth = 0.01)
 ```
 
 These look OK, but let's look at the standardized residual plot.
 
 ```julia
-# TODO
+# Convert into a matrix of size `(num_variables, num_samples)`
+yrep_matrix = mapreduce(hcat, yrep) do y
+    y.complaints
+end;
+
+qqnorm(dropdims(mean(yrep_matrix; dims=2); dims=2), qqline=:R)
 ```
 
 Looks OK, but we still have some very large *standardized* residuals. This might be because we are currently ignoring that the data are clustered by buildings, and that the probability of roach issue may vary substantially across buildings.
@@ -147,10 +152,16 @@ Check predictions by number of traps:
 ppc_intervals(pest_data.complaints, yrep, x = pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
 ```
 
-We haven't used the fact that the data are clustered by building yet. A posterior  predictive check might elucidate whether it would be a good idea to add the building information into the model.
+We haven't used the fact that the data are clustered by building yet. A posterior predictive check might elucidate whether it would be a good idea to add the building information into the model.
 
 ```julia
-# TODO
+ppc_stat_grouped(
+  pest_data.complaints,
+  yrep,
+  group = pest_data.building_id,
+  stat = "mean",
+  binwidth = 0.2
+)
 ```
 
 We're getting plausible predictions for most building means but some are estimated better than others and some have larger uncertainties than we might expect. If we explicitly model the variation across buildings we may be able to get much better estimates.

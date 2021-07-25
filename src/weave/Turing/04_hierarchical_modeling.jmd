@@ -128,19 +128,19 @@ building_data <- pest_data %>%
 """
 ```
 
-### Fit the hierarchical model
-
 ```julia
 # TODO: Fix the sorting in the Julia version
 building_data = rcopy(R"building_data")
 ```
+
+### Fit the hierarchical model
 
 Fit the model to data.
 
 ```julia
 using Turing
 
-HalfNormal(args...) = truncated(Normal(args...), 0, Inf)
+HalfNormal(args...) = truncated(Normal(args...), 1e-6, Inf)
 
 function NegativeBinomial2(μ, ϕ)
     p = 1 / (1 + μ / ϕ)
@@ -149,9 +149,8 @@ function NegativeBinomial2(μ, ϕ)
     return NegativeBinomial(r, p)
 end
 
-@model function hier_NB_regression(; traps, live_in_super, log_sq_foot, building_idx, building_data)
-    # J, K = size(building_data) # does not work
-    K = size(building_data)[2]
+@model function hier_NB_regression(; traps, live_in_super, log_sq_foot, building_idx, building_data, complaints=missing)
+    J, K = size(building_data)
 
     sigma_mu ~ HalfNormal() # standard deviation of building-specific intercepts
     alpha ~ Normal(log(4), 1) # intercept of model for mu
@@ -161,25 +160,33 @@ end
 
     mu ~ MvNormal(alpha .+ building_data * zeta, sigma_mu)
 
-    complaints ~ arraydist(@. NegativeBinomial2(
+    # This will be compiled away by Julia's compiler, i.e.
+    # it has zero cost at runtime. It allows us to use `.~`
+    # both to sample and observe.
+    if complaints === missing
+        complaints = Vector{Int}(undef, length(traps))
+    end
+
+    complaints .~ @. NegativeBinomial2(
         exp(mu[building_idx] + beta * traps + log_sq_foot),
         inv(inv_phi)
-    ))
+    )
     return (; sigma_mu, alpha, zeta, beta, mu, inv_phi, complaints)
 end
 ```
 
 ```julia
+# Add the `log_sq_foot` as in 02.
+transform!(pest_data, :total_sq_foot => ByRow(total_sq_foot -> log(total_sq_foot / 1e4)) => :log_sq_foot)
+
 obs = (
     traps = pest_data.traps,
     live_in_super = pest_data.live_in_super,
-    log_sq_foot = log.(pest_data.sq_footage_p_floor),
+    log_sq_foot = pest_data.log_sq_foot,
     building_idx = pest_data.building_idx,
     building_data = building_data
 );
-obs = map(Array, obs) # drop `Feather.Arrow`
-post = sample(hier_NB_regression(; obs...) | (complaints=pest_data.complaints,), NUTS(), 1_000);
-
+post = sample(hier_NB_regression(; obs..., complaints=pest_data.complaints), NUTS(), 1_000);
 ```
 
 ### Diagnostics
@@ -199,7 +206,7 @@ First the chain:
 post
 ```
 
-You can see that the effective samples are quite low for many of the parameters relative to the total number of samples. This alone isn't indicative of the need to reparameterize, but it indicates that we should look further at the trace plots and pairs plots. First let's look at the traceplots to see if the divergent transitions form a pattern.
+You can see that the effective samples are somewhat low for many of the parameters relative to the total number of samples. This alone isn't indicative of the need to reparameterize, but it indicates that we should look further at the trace plots and pairs plots. First let's look at the traceplots to see if the divergent transitions form a pattern.
 
 ```julia
 using StatsPlots
@@ -207,13 +214,55 @@ plot(post[[:sigma_mu]])
 ```
 
 ```julia
-# TODO
+using ArviZ, LinearAlgebra
+
+# https://arviz-devs.github.io/ArviZ.jl/stable/quickstart/#Convert-to-InferenceData
+function to_arviz(prior_model, conditioned_model, posterior_samples)
+    # Sample from the prior of the latent variables, i.e. everything
+    # except `complaints`.
+    prior_samples = sample(conditioned_model, Prior(), 1_000, progress=false);
+    # Sample "predictions" of `complaints` under `prior_samples`.
+    prior_predictive = predict(prior_model, prior_samples);
+    # Sample predictions of `complains` under `posterior_samples`.
+    posterior_predictive = predict(prior_model, posterior_samples);
+    # Compute p(constraints[i] ∣ params...) where `params` are given
+    # by samples form `posterior_samples`.
+    loglikelihoods = Turing.pointwise_loglikelihoods(
+        conditioned_model,
+        MCMCChains.get_sections(posterior_samples, :parameters)
+    );
+
+    # Ensure the ordering of the loglikelihoods matches the ordering of `posterior_predictive`.
+    ynames = string.(keys(posterior_predictive));
+    loglikelihoods_vals = getindex.(Ref(loglikelihoods), ynames);
+    # Reshape into `(nchains, nsamples, size(y)...)`
+    loglikelihoods_arr = permutedims(cat(loglikelihoods_vals...; dims=3), (2, 1, 3));
+
+    # Finally convert into `InferenceData`.
+    return from_mcmcchains(
+        posterior_samples;
+        posterior_predictive=posterior_predictive,
+        log_likelihood=Dict("complaints" => loglikelihoods_arr),
+        prior=prior_samples,
+        prior_predictive=prior_predictive,
+        observed_data=Dict("complaints" => conditioned_model.args.complaints),
+        library="Turing",
+    )
+end
+```
+
+```julia
+idata = to_arviz(
+    hier_NB_regression(; obs...), # prior model
+    hier_NB_regression(; obs..., complaints=pest_data.complaints), # conditioned model
+    post # posterior samples
+)
 ```
 
 Looks as if the divergent parameters, the little red bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
 
 ```julia
-# TODO
+plot_trace(idata)
 ```
 
 What we have here is a cloud-like shape, with most of the divergences clustering towards the bottom. We'll see a bit later that we actually want this to look more like a funnel than a cloud, but the divergences are indicating that the sampler can't explore the narrowing neck of the funnel.
@@ -229,7 +278,7 @@ Of course, if the data is at all informative we shouldn't expect the posterior t
 Another way to look at the divergences is via a parallel coordinates plot:
 
 ```julia
-# TODO
+plot_parallel(idata, var_names=["sigma_mu", "mu"])
 ```
 
 Again, we see evidence that our problems concentrate when $\texttt{sigma_mu}$ is small.
@@ -267,10 +316,17 @@ Fit the model to the data.
 
     mu  = alpha .+ building_data * zeta .+ sigma_mu .* mu_raw
 
-    complaints ~ arraydist(@. NegativeBinomial2(
+    # This will be compiled away by Julia's compiler, i.e.
+    # it has zero cost at runtime. It allows us to use `.~`
+    # both to sample and observe.
+    if complaints === missing
+        complaints = Vector{Int}(undef, length(traps))
+    end
+
+    complaints .~ @. NegativeBinomial2(
         exp(mu[building_idx] + beta * traps + log_sq_foot),
         inv(inv_phi)
-    ))
+    )
     return (; sigma_mu, alpha, zeta, beta, mu, inv_phi, complaints)
 end
 ```
@@ -284,27 +340,25 @@ post_ncp = sample(hier_NB_regression_ncp(; obs..., complaints=pest_data.complain
 This has improved the effective sample sizes of $\texttt{mu}$. We extract the parameters to run our usual posterior predictive checks.
 
 ```julia
-R"""
-scatter_no_divs <- mcmc_scatter(
-  as.array(fitted_model_NB_hier_ncp),
-  pars = c("mu[4]", 'sigma_mu'),
-  transform = list('sigma_mu' = "log"),
-  np = nuts_params(fitted_model_NB_hier_ncp)
+idata_ncp = to_arviz(
+    hier_NB_regression_ncp(; obs...), # prior model
+    hier_NB_regression_ncp(; obs..., complaints=pest_data.complaints), # conditioned model
+    post_ncp # posterior samples
 )
-bayesplot_grid(scatter_with_divs, scatter_no_divs,
-               grid_args = list(ncol = 2), ylim = c(-11, 1))
-"""
 ```
 
 ```julia
-R"""
-parcoord_no_divs <- mcmc_parcoord(
-  as.array(fitted_model_NB_hier_ncp, pars = c("sigma_mu", "mu")),
-  np = nuts_params(fitted_model_NB_hier_ncp)
-)
-bayesplot_grid(parcoord_with_divs, parcoord_no_divs,
-               ylim = c(-3, 3))
-"""
+plot_trace(idata_ncp)
+```
+
+```julia
+plot_parallel(idata_ncp, var_names=["sigma_mu", "mu_raw"])
+```
+
+Notice how the numerical errors are now much reduced (depending on your random seed, they might be completely gone!).
+
+```julia
+plot_ppc(idata_ncp)
 ```
 
 ```julia
