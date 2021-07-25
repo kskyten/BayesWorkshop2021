@@ -1,0 +1,497 @@
+```julia; echo=false; results="hidden"
+using DrWatson
+@quickactivate "BayesWorkshop2021"
+include(joinpath(srcdir(), "setup.jl"));
+```
+## Hierarchical modeling
+
+### Modeling varying intercepts for each building
+
+Let's add a hierarchical intercept parameter, $\alpha_b$ at the building level to our model.
+
+$$
+\text{complaints}_{b,t} \sim \text{Neg-Binomial}(\lambda_{b,t}, \phi) \\
+\lambda_{b,t}  = \exp{(\eta_{b,t})} \\
+\eta_{b,t} = \mu_b + \beta \, {\rm traps}_{b,t} + \beta_{\rm super}\, {\rm super}_b + \text{log_sq_foot}_b \\
+\mu_b \sim \text{Normal}(\alpha, \sigma_{\mu})
+$$
+
+In our Stan model, $\mu_b$ is the $b$-th element of the vector $\texttt{mu}$ which has one element per building.
+
+One of our predictors varies only by building, so we can rewrite the above model more efficiently like so:
+
+$$
+\eta_{b,t} = \mu_b + \beta \, {\rm traps}_{b,t} + \text{log_sq_foot}_b\\
+\mu_b \sim \text{Normal}(\alpha +  \beta_{\text{super}} \, \text{super}_b , \sigma_{\mu})
+$$
+
+We have more information at the building level as well, like the average age of the residents, the average age of the buildings, and the average per-apartment monthly rent so we can add that data into a matrix called `building_data`, which will have one row per building and four columns:
+
+  * `live_in_super`
+  * `age_of_building`
+  * `average_tentant_age`
+  * `monthly_average_rent`
+
+We'll write the Stan model like:
+
+$$
+\eta_{b,t} = \alpha_b + \beta \, {\rm traps} + \text{log_sq_foot}\\
+\mu \sim \text{Normal}(\alpha + \texttt{building_data} \, \zeta, \,\sigma_{\mu})
+$$
+
+### Prepare building data for hierarchical
+
+We'll need to do some more data prep before we can fit our models. Firstly to use the building variable in Stan we will need to transform it from a factor variable to an integer variable.
+
+```julia
+using DataFrames
+using CategoricalArrays
+using Dates
+
+pest_data.building_fac = categorical(pest_data.building_id)
+pest_data.building_idx = levelcode.(pest_data.building_fac)
+
+pest_data.mo_idx = month.(pest_data.date)
+n_months = length(unique(pest_data.date))
+n_buildings = length(unique(pest_data.building_id))
+pest_data.ids = repeat(1:n_months, n_buildings)
+```
+
+```julia
+using MLDataUtils
+
+building_data = pest_data[:, [:building_idx, :live_in_super, :age_of_building, :total_sq_foot,
+        :average_tenant_age, :monthly_average_rent]]
+building_data = select(sort(unique(building_data), :building_idx), Not(:building_idx))
+μ = center!(building_data)
+
+building_data.age_of_building = building_data.age_of_building ./ 10
+building_data.total_sq_foot = building_data.total_sq_foot ./ 10000
+building_data.average_tenant_age = building_data.average_tenant_age ./ 10
+building_data.monthly_average_rent = building_data.monthly_average_rent ./ 1000;
+
+building_data_mat = Matrix(building_data)
+```
+
+```julia
+using RCall
+let dir = datadir("pest_data.rds")
+    R"""
+    library(dplyr)
+    library(lubridate)
+
+    pest_data <- readRDS($dir)
+        N_buildings <- length(unique(pest_data$building_id))
+    """
+end
+```
+
+```julia
+R"""
+N_months <- length(unique(pest_data$date))
+
+# Add some IDs for building and month
+pest_data <- pest_data %>%
+  mutate(
+    building_fac = factor(building_id, levels = unique(building_id)),
+    building_idx = as.integer(building_fac),
+    ids = rep(1:N_months, N_buildings),
+    mo_idx = lubridate::month(date)
+  )
+"""
+```
+
+```julia
+R"""
+# Center and rescale the building specific data
+building_data <- pest_data %>%
+    select(
+      building_idx,
+      live_in_super,
+      age_of_building,
+      total_sq_foot,
+      average_tenant_age,
+      monthly_average_rent
+    ) %>%
+    unique() %>%
+    arrange(building_idx) %>%
+    select(-building_idx) %>%
+    scale(scale=FALSE) %>%
+    as.data.frame() %>%
+    mutate( # scale by constants
+      age_of_building = age_of_building / 10,
+      total_sq_foot = total_sq_foot / 10000,
+      average_tenant_age = average_tenant_age / 10,
+      monthly_average_rent = monthly_average_rent / 1000
+    ) %>%
+    as.matrix()
+"""
+```
+
+### Fit the hierarchical model
+
+```julia
+# TODO: Fix the sorting in the Julia version
+building_data = rcopy(R"building_data")
+```
+
+Fit the model to data.
+
+```julia
+using Turing
+
+HalfNormal(args...) = truncated(Normal(args...), 0, Inf)
+
+function NegativeBinomial2(μ, ϕ)
+    p = 1 / (1 + μ / ϕ)
+    r = ϕ
+
+    return NegativeBinomial(r, p)
+end
+
+@model function hier_NB_regression(; traps, live_in_super, log_sq_foot, building_idx, building_data)
+    # J, K = size(building_data) # does not work
+    K = size(building_data)[2]
+
+    sigma_mu ~ HalfNormal() # standard deviation of building-specific intercepts
+    alpha ~ Normal(log(4), 1) # intercept of model for mu
+    zeta ~ filldist(Normal(), K)  # coefficients on building-level predictors in model for mu
+    beta ~ Normal(-0.25, 1) # coefficient on traps
+    inv_phi ~ HalfNormal() # 1/phi (easier to think about prior for 1/phi instead of phi)
+
+    mu ~ MvNormal(alpha .+ building_data * zeta, sigma_mu)
+
+    complaints ~ arraydist(@. NegativeBinomial2(
+        exp(mu[building_idx] + beta * traps + log_sq_foot),
+        inv(inv_phi)
+    ))
+    return (; sigma_mu, alpha, zeta, beta, mu, inv_phi, complaints)
+end
+```
+
+```julia
+obs = (
+    traps = Array(pest_data.traps),
+    live_in_super = pest_data.live_in_super,
+    log_sq_foot = log.(pest_data.sq_footage_p_floor),
+    building_idx = pest_data.building_idx,
+    building_data = building_data
+);
+obs = map(Array, obs) # drop `Feather.Arrow`
+post = sample(hier_NB_regression(; obs...) | (complaints=pest_data.complaints,), NUTS(), 1_000);
+
+```
+
+### Diagnostics
+
+We get a bunch of warnings from Turing about divergent transitions, which is an indication that there may be regions of the posterior that have not been explored by the Markov chains.
+
+Divergences are discussed in more detail in the course slides as well as the **bayesplot** (MCMC diagnostics vignette)[http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html] and [*A Conceptual Introduction to Hamiltonian Monte Carlo*](https://arxiv.org/abs/1701.02434).
+
+In this example we will see that we have divergent transitions because we need to reparameterize our model - i.e., we will retain the overall structure of the model, but transform some of the parameters so that it is easier for Stan to sample from the parameter space. Before we go through exactly how to do this reparameterization, we will first go through what indicates that this is something that reparameterization will resolve. We will go through:
+
+1. Examining the fitted parameter values, including the effective sample size
+2. Traceplots and scatterplots that reveal particular patterns in locations of the divergences.
+
+First the chain:
+
+```julia
+post[[:sigma_mu,:beta,:alpha,:inv_phi, MCMCChains.namesingroup(post, :mu)...]]
+```
+
+You can see that the effective samples are quite low for many of the parameters relative to the total number of samples. This alone isn't indicative of the need to reparameterize, but it indicates that we should look further at the trace plots and pairs plots. First let's look at the traceplots to see if the divergent transitions form a pattern.
+
+```julia
+using StatsPlots
+plot(post[[:sigma_mu]])
+```
+
+```julia
+# TODO: Figure out what inputs are expected and convert the chain accordingly.
+mcmc_trace(post.sigma_mu, np=nuts_params())
+
+R"""
+# use as.array to keep the markov chains separate for trace plots
+mcmc_trace(
+  as.array(fitted_model_NB_hier,pars = 'sigma_mu'),
+  np = nuts_params(fitted_model_NB_hier),
+  window = c(500,1000)
+)
+"""
+```
+
+Looks as if the divergent parameters, the little red bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
+
+```julia
+R"""
+# assign to object so we can compare to another plot later
+scatter_with_divs <- mcmc_scatter(
+  as.array(fitted_model_NB_hier),
+  pars = c("mu[4]", 'sigma_mu'),
+  transform = list('sigma_mu' = "log"),
+  np = nuts_params(fitted_model_NB_hier)
+)
+scatter_with_divs
+"""
+```
+
+What we have here is a cloud-like shape, with most of the divergences clustering towards the bottom. We'll see a bit later that we actually want this to look more like a funnel than a cloud, but the divergences are indicating that the sampler can't explore the narrowing neck of the funnel.
+
+One way to see why we should expect some version of a funnel is to look at some simulations from the prior, which we can do without MCMC and thus with no risk of sampling problems:
+
+```julia
+R"""
+N_sims <- 1000
+log_sigma <- rep(NA, N_sims)
+theta <- rep(NA, N_sims)
+for (j in 1:N_sims) {
+  log_sigma[j] <- rnorm(1, mean = 0, sd = 1)
+  theta[j] <- rnorm(1, mean = 0, sd = exp(log_sigma[j]))
+}
+draws <- cbind("mu" = theta, "log(sigma_mu)" = log_sigma)
+mcmc_scatter(draws)
+"""
+```
+
+Of course, if the data is at all informative we shouldn't expect the posterior to look exactly like the prior. But unless the data is incredibly informative about the parameters and the posterior concentrates away from the narrow neck of the funnel, the sampler is going to have to confront the funnel geometry. (See the [Visual MCMC Diagnostics](http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html) vignette for more on this.)
+
+Another way to look at the divergences is via a parallel coordinates plot:
+
+```julia
+R"""
+parcoord_with_divs <- mcmc_parcoord(
+  as.array(fitted_model_NB_hier, pars = c("sigma_mu", "mu")),
+  np = nuts_params(fitted_model_NB_hier)
+)
+parcoord_with_divs
+"""
+```
+
+Again, we see evidence that our problems concentrate when $\texttt{sigma_mu}$ is small.
+
+### Reparameterize and recheck diagnostics
+
+Instead, we should use the non-centered parameterization for $\mu_b$. We define a vector of auxiliary variables in the parameters block, $\texttt{mu_raw}$ that is given a $\text{Normal}(0, 1)$ prior in the model block. We then make $\texttt{mu}$ a transformed parameter: We can reparameterize the random intercept $\mu_b$, which is distributed:
+
+$$
+\mu_b \sim \text{Normal}(\alpha + \texttt{building_data} \, \zeta, \sigma_{\mu})
+$$
+
+```
+transformed parameters {
+  vector[J] mu;
+  mu = alpha + building_data * zeta + sigma_mu * mu_raw;
+}
+```
+
+This gives $\texttt{mu}$ a $\text{Normal}(\alpha + \texttt{building_data}\, \zeta, \sigma_\mu)$ distribution, but it decouples the dependence of the density of each element of $\texttt{mu}$ from $\texttt{sigma_mu}$ ($\sigma_\mu$). hier*NB*regression_ncp.stan uses the non-centered parameterization for $\texttt{mu}$. We will examine the effective sample size of the fitted model to see whether we've fixed the problem with our reparameterization.
+
+Fit the model to the data.
+
+```julia
+@model function hier_NB_regression_ncp(; traps, live_in_super, log_sq_foot, building_idx, building_data)
+    K = size(building_data)[2]
+    J = size(building_data)[1]
+
+    sigma_mu ~ HalfNormal()
+    alpha ~ Normal(log(4), 1)
+    zeta ~ filldist(Normal(), K)  # could also use informative priors on the different elements
+    beta ~ Normal(-0.25, 1)
+    inv_phi ~ HalfNormal()
+    mu_raw ~ filldist(Normal(), J)
+
+    mu  = alpha .+ building_data * zeta .+ sigma_mu .* mu_raw
+
+    complaints ~ arraydist(@. NegativeBinomial2(
+        exp(mu[building_idx] + beta * traps + log_sq_foot),
+        inv(inv_phi)
+    ))
+    return (; sigma_mu, alpha, zeta, beta, mu, inv_phi, complaints)
+end
+```
+
+Examining the fit of the new model
+
+```julia
+post_ncp = sample(hier_NB_regression_ncp(; obs...) | (complaints=pest_data.complaints,), NUTS(), 1_000);
+```
+
+This has improved the effective sample sizes of $\texttt{mu}$. We extract the parameters to run our usual posterior predictive checks.
+
+```julia
+R"""
+scatter_no_divs <- mcmc_scatter(
+  as.array(fitted_model_NB_hier_ncp),
+  pars = c("mu[4]", 'sigma_mu'),
+  transform = list('sigma_mu' = "log"),
+  np = nuts_params(fitted_model_NB_hier_ncp)
+)
+bayesplot_grid(scatter_with_divs, scatter_no_divs,
+               grid_args = list(ncol = 2), ylim = c(-11, 1))
+"""
+```
+
+```julia
+R"""
+parcoord_no_divs <- mcmc_parcoord(
+  as.array(fitted_model_NB_hier_ncp, pars = c("sigma_mu", "mu")),
+  np = nuts_params(fitted_model_NB_hier_ncp)
+)
+bayesplot_grid(parcoord_with_divs, parcoord_no_divs,
+               ylim = c(-3, 3))
+"""
+```
+
+```julia
+yrep = posterior_predictive(hier_NB_regression_ncp(; obs...), post_ncp)
+yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
+    (complaints = x, )
+end
+```
+
+The marginal plot, again.
+
+```julia
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
+```
+
+This looks quite nice. If we've captured the building-level means well, then the posterior distribution of means by building should match well with the observed means of the quantity of building complaints by month.
+
+```julia
+R"""
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'mean',
+  binwidth = 0.5
+)
+"""
+```
+
+We weren't doing terribly with the building-specific means before, but now they are all well-captured by our model. The model is also able to do a decent job estimating within-building variability:
+
+```julia
+R"""
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'sd',
+  binwidth = 0.5
+)
+"""
+```
+
+Predictions by number of traps:
+
+```julia
+R"""
+ppc_intervals(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  x = stan_dat_hier$traps
+) +
+  labs(x = "Number of traps", y = "Number of complaints")
+"""
+```
+
+Standardized residuals:
+
+```julia
+R"""
+mean_y_rep <- colMeans(y_rep)
+mean_inv_phi <- mean(as.matrix(fitted_model_NB_hier_ncp, pars = "inv_phi"))
+std_resid <- (stan_dat_hier$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
+qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+"""
+```
+
+Rootogram:
+
+```julia
+ppc_rootogram(pest_data.complaints, yrep)
+```
+
+### Varying intercepts *and* varying slopes
+
+We've gotten some new data that extends the number of time points for which we have observations for each building. This will let us explore how to expand the model a bit more with varying *slopes* in addition to the varying intercepts and also, later, also model temporal variation.
+
+```julia
+
+R"""
+stan_dat_hier <- readRDS('data/pest_data_longer_stan_dat.RDS')
+"""
+
+```
+
+Perhaps if the levels of complaints differ by building, the coefficient for the effect of traps on building does too. We can add this to our model and observe the fit.
+
+$$
+\text{complaints}_{b,t} \sim \text{Neg-Binomial}(\lambda_{b,t}, \phi)  \\
+\lambda_{b,t} = \exp{(\eta_{b,t})}\\
+\eta_{b,t} = \mu_b + \kappa_b \, \texttt{traps}_{b,t} + \text{log_sq_foot}_b \\
+\mu_b \sim \text{Normal}(\alpha + \texttt{building_data} \, \zeta, \sigma_{\mu}) \\
+\kappa_b \sim \text{Normal}(\beta + \texttt{building_data} \, \gamma, \sigma_{\kappa})
+$$
+
+Fit the model to data and extract the posterior draws needed for our posterior predictive checks.
+
+```julia
+@model function hier_NB_regression_ncp_slopes(; traps, live_in_super, log_sq_foot, building_idx, building_data)
+    J, K = size(building_data)
+
+    kappa_raw ~ filldist(Normal(), J)
+    sigma_kappa ~ HalfNormal()
+    gamma ~ filldist(Normal(), K)
+
+    sigma_mu ~ HalfNormal()
+    alpha ~ Normal(log(4), 1)
+    zeta ~ filldist(Normal(), K)  # could also use informative priors on the different elements
+    beta ~ Normal(-0.25, 1)
+    inv_phi ~ HalfNormal()
+    mu_raw ~ filldist(Normal(), J)
+
+    mu  = alpha .+ building_data * zeta .+ sigma_mu * mu_raw
+    kappa = beta .+ building_data * gamma .+ sigma_kappa * kappa_raw;
+
+    # @info "" map(Base.Fix1(broadcast, ForwardDiff.value), (; sigma_mu, sigma_kappa, gamma, alpha, zeta, beta, mu, kappa, inv_phi))
+
+    complaints ~ arraydist(@. NegativeBinomial2(
+        exp(mu[building_idx] + kappa[building_idx] * traps + log_sq_foot),
+        inv(inv_phi)
+    ))
+    return (; sigma_mu, sigma_kappa, gamma, alpha, zeta, beta, mu, kappa, inv_phi, complaints)
+end
+```
+
+```julia
+post_ncp_slopes = sample(hier_NB_regression_ncp_slopes(; obs...) | (complaints=pest_data.complaints,), NUTS(), 1_000)
+```
+
+To see if the model infers building-to-building differences in, we can plot a histogram of our marginal posterior distribution for `sigma_kappa`.
+
+```julia
+plot(post_ncp_slopes[[:sigma_kappa]])
+```
+
+```julia
+plot(post_ncp_slopes[[:beta]])
+```
+
+While the model can't specifically rule out zero from the posterior, it does have mass at small non-zero numbers, so we should leave in the hierarchy over $\texttt{kappa}$. Plotting the marginal data density again, we can see the model still looks well calibrated.
+
+```julia
+generated_quantities(hier_NB_regression_ncp_slopes(; obs...), MCMCChains.get_sections(post_ncp_slopes, :parameters))
+```
+
+```julia
+yrep = posterior_predictive(hier_NB_regression_ncp_slopes(; obs...), post_ncp_slopes)
+yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
+    (complaints = x, )
+end
+```
+
+```julia
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
+```
