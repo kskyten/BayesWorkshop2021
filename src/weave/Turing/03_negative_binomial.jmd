@@ -46,7 +46,7 @@ function NegativeBinomial2(μ, ϕ)
     return NegativeBinomial(r, p)
 end
 
-@model function multiple_NB_regression(traps, live_in_super, log_sq_foot, complaints=missing)
+@model function multiple_NB_regression(; traps, live_in_super, log_sq_foot, complaints=missing)
     alpha ~ Normal(log(4), 1)
     beta ~ Normal(-0.25, 1)
     beta_super ~ Normal(-0.5, 1)
@@ -80,10 +80,15 @@ fake_data = multiple_NB_regression(; fake_obs...)()
 fake_post = sample(multiple_NB_regression(; fake_obs..., complaints=fake_data.complaints), NUTS(), 1_000)
 ```
 ```julia
-mcmc_recover_hist(fake_post, (alpha = fake_data.alpha,
-    beta = fake_data.beta,
-    beta_super = fake_data.beta_super,
-    inv_phi = fake_data.inv_phi))
+mcmc_recover_hist(
+    fake_post,
+    (
+        alpha = fake_data.alpha,
+        beta = fake_data.beta,
+        beta_super = fake_data.beta_super,
+        inv_phi = fake_data.inv_phi
+    )
+)
 ```
 
 ### Fit to real data and check the fit
@@ -92,7 +97,7 @@ mcmc_recover_hist(fake_post, (alpha = fake_data.alpha,
 obs = (
     traps = pest_data.traps,
     live_in_super = pest_data.live_in_super,
-    log_sq_foot = log.(pest_data.sq_footage_p_floor)
+    log_sq_foot = pest_data.log_sq_foot
 )
 post = sample(multiple_NB_regression(; obs..., complaints=pest_data.complaints), NUTS(), 1_000)
 ```
@@ -100,7 +105,7 @@ post = sample(multiple_NB_regression(; obs..., complaints=pest_data.complaints),
 Let's look at our predictions vs. the data.
 
 ```julia
-yrep = posterior_predictive(multiple_NB_regression(obs...), post)
+yrep = posterior_predictive(multiple_NB_regression(; obs...), post)
 ```
 
 ```julia
