@@ -1,0 +1,391 @@
+---
+title: Bayes workshop
+author: Kusti Skytén
+date:
+---
+```julia; echo=false; results="hidden"
+using DrWatson
+@quickactivate "BayesWorkshop2021"
+include(joinpath(srcdir(), "setup.jl"));
+```
+
+## The problem
+
+### Background
+
+Imagine that you are a statistician or data scientist working as an independent
+contractor. One of your clients is a company that owns many residential buildings
+throughout New York City. The property manager explains that they are concerned about the number
+of cockroach complaints that they receive from their buildings. Previously
+the company has offered monthly visits from a pest inspector as a solution to
+this problem. While this is the default solution of many property managers in
+NYC, the tenants are rarely home when the inspector visits, and so the manager
+reasons that this is a relatively expensive solution that is currently not very
+effective.
+
+One alternative to this problem is to deploy long term bait stations. In this
+alternative, child and pet safe bait stations are installed throughout the
+apartment building. Cockroaches obtain quick acting poison from these stations
+and distribute it throughout the colony. The manufacturer of these bait stations
+provides some indication of the space-to-bait efficacy, but the manager suspects
+that this guidance was not calculated with NYC roaches in mind. NYC roaches, the
+manager rationalizes, have more hustle than traditional roaches; and NYC
+buildings are built differently than other common residential buildings in the
+US. This is particularly important as the unit cost for each bait station per
+year is quite high.
+
+### The goal
+
+The manager wishes to employ your services to help them to find the optimal
+number of roach bait stations they should place in each of their buildings in
+order to minimize the number of cockroach complaints while also keeping
+expenditure on pest control affordable.
+
+A subset of the company's buildings have been randomly selected for an experiment:
+
+* At the beginning of each month, a pest inspector randomly places a number of
+bait stations throughout the building, without knowledge of the current
+cockroach levels in the building
+* At the end of the month, the manager records
+the total number of cockroach complaints in that building.
+* The manager would like to determine the optimal number of traps ($\textrm{traps}$) that
+balances the lost revenue ($R$) that complaints ($\textrm{complaints}$) generate
+with the all-in cost of maintaining the traps ($\textrm{TC}$).
+
+Fortunately, Bayesian data analysis provides a coherent framework for us to tackle this problem.
+
+Formally, we are interested in finding
+
+$$
+\arg\max_{\textrm{traps} \in \mathbb{N}} \mathbb{E}_{\text{complaints}}[R(\textrm{complaints}(\textrm{traps})) - \textrm{TC}(\textrm{traps})]
+$$
+
+The property manager would also, if possible, like to learn how these results
+generalize to buildings they haven't treated so they can understand the
+potential costs of pest control at buildings they are acquiring as well as for
+the rest of their building portfolio.
+
+As the property manager has complete control over the number of traps set, the
+random variable contributing to this expectation is the number of complaints
+given the number of traps. We will model the number of complaints as a function
+of the number of traps.
+
+## The data
+
+The data provided to us is in a file called `pest_data.feather`. Let's
+load the data and see what the structure is:
+
+We have access to the following fields:
+
+* `complaints`: Number of complaints per building per month
+* `building_id`: The unique building identifier
+* `traps`: The number of traps used per month per building
+* `date`: The date at which the number of complaints are recorded
+* `live_in_super`: An indicator for whether the building as a live-in super
+* `age_of_building`: The age of the building
+* `total_sq_foot`: The total square footage of the building
+* `average_tenant_age`: The average age of the tenants per building
+* `monthly_average_rent`: The average monthly rent per building
+* `floors`: The number of floors per building
+
+First, let's see how many buildings we have data for:
+
+```julia
+n_buildings = length(unique(pest_data.building_id))
+```
+
+And make some plots of the raw data:
+
+```julia
+using VegaLite
+
+pest_data |>
+@vlplot(
+  :bar,
+  x = :complaints
+)
+```
+
+```julia
+pest_data |>
+@vlplot(
+  :point,
+  x = :traps,
+  y = :complaints,
+  color = "live_in_super:N"
+)
+```
+
+```julia
+pest_data |>
+@vlplot(
+  :point,
+  x = :date,
+  y = :complaints,
+  color = "live_in_super:N"
+)
+```
+
+```julia
+using RCall
+ggplot = rimport("ggplot2")
+
+ggplot.ggplot(pest_data, ggplot.aes(x = :complaints)) + ggplot.geom_bar()
+```
+
+```julia
+ggplot.ggplot(pest_data, ggplot.aes(x = :traps, y = :complaints, color = :live_in_super == true)) + ggplot.geom_jitter()
+```
+
+```julia
+# R"""
+# library(ggplot2)
+# ggplot(pest_data, aes(x = date, y = complaints, color = live_in_super == TRUE)) +
+#   geom_line(aes(linetype = "Number of complaints")) +
+#   geom_point(color = "black") +
+#   geom_line(aes(y = traps, linetype = "Number of traps"), color = "black", size = 0.25) +
+#   facet_wrap(~building_id, scales = "free", ncol = 2, labeller = label_both) +
+#   scale_x_date(name = "Month", date_labels = "%b") +
+#   scale_y_continuous(name = "", limits = range(pest_data$complaints)) +
+#   scale_linetype_discrete(name = "") +
+#   scale_color_discrete(name = "Live-in super")
+# """
+```
+
+
+The first question we'll look at is just whether the number of complaints per
+building per month is associated with the number of bait stations per building
+per month, ignoring the temporal and across-building variation (we'll come back
+to those sources of variation later in the document). That requires only two
+variables, $\textrm{complaints}$ and $\textrm{traps}$. How should we model the
+number of complaints?
+
+
+## Bayesian workflow
+
+See slides
+
+## Modeling count data : Poisson distribution
+
+We already know some rudimentary information about what we should expect. The
+number of complaints over a month should be either zero or an integer. The
+property manager tells us that it is possible but unlikely that number of
+complaints in a given month is zero. Occasionally there are a very large number
+of complaints in a single month. A common way of modeling this sort of skewed,
+single bounded count data is as a Poisson random variable. One concern about
+modeling the outcome variable as Poisson is that the data may be
+over-dispersed, but we'll start with the Poisson model and then check
+whether over-dispersion is a problem by comparing our model's predictions
+to the data.
+
+### Model
+
+Given that we have chosen a Poisson regression, we define the likelihood to be
+the Poisson probability mass function over the number bait stations placed in
+the building, denoted below as `traps`. This model assumes that the mean and
+variance of the outcome variable `complaints` (number of complaints) is the
+same. We'll investigate whether this is a good assumption after we fit the
+model.
+
+For building $b = 1,\dots,10$ at time (month) $t = 1,\dots,12$, we have
+
+$$
+\begin{align*}
+\textrm{complaints}_{b,t} & \sim \textrm{Poisson}(\lambda_{b,t}) \\
+\lambda_{b,t} & = \exp{(\eta_{b,t})} \\
+\eta_{b,t} &= \alpha + \beta \, \textrm{traps}_{b,t}
+\end{align*}
+$$
+
+Let's encode this probability model in a Turing.
+
+### Writing our first model
+
+```julia
+using Turing
+
+@model function simple_poisson(traps)
+    α ~ Normal(log(4), .1)
+    β ~ Normal(-0.25, .1)
+
+    complaints ~ arraydist(@. Poisson(exp(α + β * traps)))
+
+    return (; α, β, complaints)
+end
+```
+
+### Making sure our code is right
+
+However, before we fit the model to real data, we should check that our
+model works well with simulated data. We'll simulate data according to the model
+and then check that we can sufficiently recover the parameter values used
+in the simulation. We can simulate the data by calling the `rand()` method on
+our model.
+
+```julia
+N = size(pest_data, 1)
+mean_traps = mean(pest_data.traps)
+fake_traps = rand(filldist(Poisson(mean_traps), N))
+
+fake_data = simple_poisson(fake_traps)()
+fake_complaints = collect(fake_data.complaints);
+```
+
+### Fit the model to the fake data:
+
+In order to pass the fake data to our Stan program using RStan, we need to
+arrange the data into a named list. The names must match the names used
+in the `data` block of the Stan program.
+
+```julia
+fake_model = simple_poisson(fake_traps) | (complaints=fake_complaints, );
+fake_model()
+```
+
+Now that we have the simulated data we fit the model to see if we can recover
+the `alpha` and `beta` parameters used in the simulation.
+
+### Assess parameter recovery
+
+```julia
+fake_post = sample(simple_poisson(fake_traps) | (complaints=fake_complaints,), NUTS(), 1_000)
+mcmc_recover_hist(fake_post, (α = fake_data.α, β = fake_data.β))
+```
+
+We don't do a great job recovering the parameters here simply because we're
+simulating so few observations that the posterior uncertainty remains rather
+large, but it looks at least _plausible_ ($\alpha$ and $\beta$ are contained
+within the histograms). If we did the simulation with many more observations the
+parameters would be estimated much more precisely.
+
+We should also check if the `y_rep` datasets (in-sample predictions) that we coded
+in the `generated quantities` block are similar to the `y` (complaints) values
+we conditioned on when fitting the model. (The **bayesplot**
+package [vignettes](http://mc-stan.org/bayesplot/articles/graphical-ppcs.html)
+are a good resource on this topic.)
+
+Here is a plot of the density estimate of the observed data compared to
+200 of the `y_rep` datasets:
+
+```julia
+yrep = posterior_predictive(simple_poisson(fake_traps), fake_post)
+yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
+    (complaints = x, )
+end
+```
+
+```julia
+ppc_dens_overlay(fake_complaints, yrep[1:200])
+```
+
+In the plot above we have the kernel density estimate of the observed data ($y$,
+thicker curve) and 200 simulated data sets ($y_{rep}$, thin curves) from the
+posterior predictive distribution. If the model fits the data well, as it does
+here, there is little difference between the observed dataset and the simulated
+datasets.
+
+Another plot we can make for count data is a rootogram. This is a plot of the
+expected counts (continuous line) vs the observed counts (blue histogram). We
+can see the model fits well because the observed histogram matches the expected
+counts relatively well.
+
+```julia
+ppc_rootogram(fake_complaints, yrep[1:200])
+```
+
+
+### Fit with real data
+
+To fit the model to the actual observed data we'll first create a list to pass
+to Stan using the variables in the `pest_data` data frame:
+
+```julia
+post = sample(simple_poisson(pest_data.traps) | (complaints=pest_data.complaints,), NUTS(), 1_000);
+```
+
+and printing the parameters. What do these tell us?
+
+```julia
+post
+```
+
+We can also plot the posterior distributions:
+
+```julia
+using StatsPlots
+plot(post)
+```
+
+As we expected, it appears the number of bait stations set in a building is
+associated with the number of complaints about cockroaches that were made in the
+following month. However, we still need to consider how well the model fits.
+
+
+### Posterior predictive checking
+
+```julia
+yrep = posterior_predictive(simple_poisson(pest_data.traps), post)
+yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
+    (complaints = x, )
+end
+```
+
+```julia
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
+```
+
+As opposed to when we fit the model to simulated data above, here the simulated
+datasets is not as dispersed as the observed data and don't seem to capture the
+rate of zeros in the observed data. The Poisson model may not be sufficient for
+this data.
+
+Let's explore this further by looking directly at the proportion of zeros in the
+real data and predicted data.
+
+```julia
+R"""
+prop_zero <- function(x) mean(x == 0)
+"""
+
+ppc_stat(pest_data.complaints, yrep, stat = "prop_zero")
+```
+
+The plot above shows the observed proportion of zeros (thick vertical line) and
+a histogram of the proportion of zeros in each of the simulated data sets. It is
+clear that the model does not capture this feature of the data well at all.
+
+This next plot is a plot of the standardised residuals of the observed vs predicted number of complaints.
+
+```r
+mean_y_rep <- colMeans(y_rep)
+std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep)
+qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+```
+
+As you can see here, it looks as though we have more positive residuals than negative,
+which indicates that the model tends to underestimate the number of complaints
+that will be received.
+
+The rootogram is another useful plot to compare the observed vs expected number
+of complaints. This is a plot of the expected counts (continuous line) vs the
+observed counts (blue histogram):
+
+```julia
+ppc_rootogram(pest_data.complaints, yrep)
+```
+
+If the model was fitting well these would be relatively similar, however in this
+figure we can see the number of complaints is underestimated if there are few
+complaints, over-estimated for medium numbers of complaints, and underestimated
+if there are a large number of complaints.
+
+We can also view how the predicted number of complaints varies with the number
+of traps. From this we can see that the model doesn't seem to fully capture the
+data.
+
+```julia
+ppc_intervals(pest_data.complaints, yrep, x = pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
+```
+
+Specifically, the model doesn't capture the tails of the observed data very
+well.
