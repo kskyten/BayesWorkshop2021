@@ -196,7 +196,7 @@ In this example we will see that we have divergent transitions because we need t
 First the chain:
 
 ```julia
-post[[:sigma_mu,:beta,:alpha,:inv_phi, MCMCChains.namesingroup(post, :mu)...]]
+post
 ```
 
 You can see that the effective samples are quite low for many of the parameters relative to the total number of samples. This alone isn't indicative of the need to reparameterize, but it indicates that we should look further at the trace plots and pairs plots. First let's look at the traceplots to see if the divergent transitions form a pattern.
@@ -207,32 +207,13 @@ plot(post[[:sigma_mu]])
 ```
 
 ```julia
-# TODO: Figure out what inputs are expected and convert the chain accordingly.
-mcmc_trace(post.sigma_mu, np=nuts_params())
-
-R"""
-# use as.array to keep the markov chains separate for trace plots
-mcmc_trace(
-  as.array(fitted_model_NB_hier,pars = 'sigma_mu'),
-  np = nuts_params(fitted_model_NB_hier),
-  window = c(500,1000)
-)
-"""
+# TODO
 ```
 
 Looks as if the divergent parameters, the little red bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
 
 ```julia
-R"""
-# assign to object so we can compare to another plot later
-scatter_with_divs <- mcmc_scatter(
-  as.array(fitted_model_NB_hier),
-  pars = c("mu[4]", 'sigma_mu'),
-  transform = list('sigma_mu' = "log"),
-  np = nuts_params(fitted_model_NB_hier)
-)
-scatter_with_divs
-"""
+# TODO
 ```
 
 What we have here is a cloud-like shape, with most of the divergences clustering towards the bottom. We'll see a bit later that we actually want this to look more like a funnel than a cloud, but the divergences are indicating that the sampler can't explore the narrowing neck of the funnel.
@@ -240,17 +221,7 @@ What we have here is a cloud-like shape, with most of the divergences clustering
 One way to see why we should expect some version of a funnel is to look at some simulations from the prior, which we can do without MCMC and thus with no risk of sampling problems:
 
 ```julia
-R"""
-N_sims <- 1000
-log_sigma <- rep(NA, N_sims)
-theta <- rep(NA, N_sims)
-for (j in 1:N_sims) {
-  log_sigma[j] <- rnorm(1, mean = 0, sd = 1)
-  theta[j] <- rnorm(1, mean = 0, sd = exp(log_sigma[j]))
-}
-draws <- cbind("mu" = theta, "log(sigma_mu)" = log_sigma)
-mcmc_scatter(draws)
-"""
+# TODO
 ```
 
 Of course, if the data is at all informative we shouldn't expect the posterior to look exactly like the prior. But unless the data is incredibly informative about the parameters and the posterior concentrates away from the narrow neck of the funnel, the sampler is going to have to confront the funnel geometry. (See the [Visual MCMC Diagnostics](http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html) vignette for more on this.)
@@ -258,13 +229,7 @@ Of course, if the data is at all informative we shouldn't expect the posterior t
 Another way to look at the divergences is via a parallel coordinates plot:
 
 ```julia
-R"""
-parcoord_with_divs <- mcmc_parcoord(
-  as.array(fitted_model_NB_hier, pars = c("sigma_mu", "mu")),
-  np = nuts_params(fitted_model_NB_hier)
-)
-parcoord_with_divs
-"""
+# TODO
 ```
 
 Again, we see evidence that our problems concentrate when $\texttt{sigma_mu}$ is small.
@@ -289,7 +254,7 @@ This gives $\texttt{mu}$ a $\text{Normal}(\alpha + \texttt{building_data}\, \zet
 Fit the model to the data.
 
 ```julia
-@model function hier_NB_regression_ncp(; traps, live_in_super, log_sq_foot, building_idx, building_data)
+@model function hier_NB_regression_ncp(; traps, live_in_super, log_sq_foot, building_idx, building_data, complaints=missing)
     K = size(building_data)[2]
     J = size(building_data)[1]
 
@@ -313,7 +278,7 @@ end
 Examining the fit of the new model
 
 ```julia
-post_ncp = sample(hier_NB_regression_ncp(; obs...) | (complaints=pest_data.complaints,), NUTS(), 1_000);
+post_ncp = sample(hier_NB_regression_ncp(; obs..., complaints=pest_data.complaints), NUTS(), 1_000);
 ```
 
 This has improved the effective sample sizes of $\texttt{mu}$. We extract the parameters to run our usual posterior predictive checks.
@@ -344,9 +309,6 @@ bayesplot_grid(parcoord_with_divs, parcoord_no_divs,
 
 ```julia
 yrep = posterior_predictive(hier_NB_regression_ncp(; obs...), post_ncp)
-yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
-    (complaints = x, )
-end
 ```
 
 The marginal plot, again.
@@ -466,7 +428,7 @@ end
 ```
 
 ```julia
-post_ncp_slopes = sample(hier_NB_regression_ncp_slopes(; obs...) | (complaints=pest_data.complaints,), NUTS(), 1_000)
+post_ncp_slopes = sample(hier_NB_regression_ncp_slopes(; obs..., complaints=pest_data.complaints), NUTS(), 1_000)
 ```
 
 To see if the model infers building-to-building differences in, we can plot a histogram of our marginal posterior distribution for `sigma_kappa`.
@@ -487,9 +449,6 @@ generated_quantities(hier_NB_regression_ncp_slopes(; obs...), MCMCChains.get_sec
 
 ```julia
 yrep = posterior_predictive(hier_NB_regression_ncp_slopes(; obs...), post_ncp_slopes)
-yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
-    (complaints = x, )
-end
 ```
 
 ```julia

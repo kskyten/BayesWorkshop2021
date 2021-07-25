@@ -1,6 +1,8 @@
 using Random
 Random.seed!(Random.GLOBAL_RNG, 123)
 
+using Turing
+
 include("posterior_predictive.jl")
 include("bayesplot.jl")
 

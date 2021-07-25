@@ -204,7 +204,7 @@ Let's encode this probability model in a Turing.
 ```julia
 using Turing
 
-@model function simple_poisson(; traps)
+@model function simple_poisson(; traps, complaints=missing)
     α ~ Normal(log(4), .1)
     β ~ Normal(-0.25, .1)
 
@@ -238,7 +238,7 @@ arrange the data into a named list. The names must match the names used
 in the `data` block of the Stan program.
 
 ```julia
-fake_model = simple_poisson(traps=fake_traps) | (complaints=fake_complaints, );
+fake_model = simple_poisson(traps=fake_traps);
 fake_model()
 ```
 
@@ -248,7 +248,7 @@ the `alpha` and `beta` parameters used in the simulation.
 ### Assess parameter recovery
 
 ```julia
-fake_post = sample(simple_poisson(traps=fake_traps) | (complaints=fake_complaints,), NUTS(), 1_000)
+fake_post = sample(simple_poisson(traps=fake_traps, complaints=fake_complaints), NUTS(), 1_000)
 mcmc_recover_hist(fake_post, (α = fake_data.α, β = fake_data.β))
 ```
 
@@ -269,9 +269,6 @@ Here is a plot of the density estimate of the observed data compared to
 
 ```julia
 yrep = posterior_predictive(simple_poisson(traps=fake_traps), fake_post)
-yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
-    (complaints = x, )
-end
 ```
 
 ```julia
@@ -300,7 +297,7 @@ To fit the model to the actual observed data we'll first create a list to pass
 to Stan using the variables in the `pest_data` data frame:
 
 ```julia
-post = sample(simple_poisson(traps=pest_data.traps) | (complaints=pest_data.complaints,), NUTS(), 1_000);
+post = sample(simple_poisson(traps=pest_data.traps, complaints=pest_data.complaints), NUTS(), 1_000);
 ```
 
 and printing the parameters. What do these tell us?
@@ -325,9 +322,6 @@ following month. However, we still need to consider how well the model fits.
 
 ```julia
 yrep = posterior_predictive(simple_poisson(traps=pest_data.traps), post)
-yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
-    (complaints = x, )
-end
 ```
 
 ```julia
