@@ -197,7 +197,7 @@ $$
 \end{align*}
 $$
 
-Let's encode this probability model in a Turing.
+Let's encode this probability model in a Turing model.
 
 ### Writing our first model
 
@@ -225,27 +225,28 @@ our model.
 ```julia
 N = size(pest_data, 1)
 mean_traps = mean(pest_data.traps)
-fake_traps = rand(filldist(Poisson(mean_traps), N))
-
-fake_data = simple_poisson(traps=fake_traps)()
-fake_complaints = collect(fake_data.complaints);
+fake_traps = rand(filldist(Poisson(mean_traps), N));
 ```
 
 ### Fit the model to the fake data:
-
-In order to pass the fake data to our Stan program using RStan, we need to
-arrange the data into a named list. The names must match the names used
-in the `data` block of the Stan program.
+A Turing `Model` is really just a function, hence we can get a sample 
+of the return-values under the prior, which in our case is all the parameters in the model,
+by simply calling the instantiated model. Hence we just instantiate the model
+on the `fake_traps` and call it:
 
 ```julia
 fake_model = simple_poisson(traps=fake_traps);
-fake_model()
+fake_data = fake_model();
+fake_complaints = fake_data.complaints;
+fake_data
 ```
 
 Now that we have the simulated data we fit the model to see if we can recover
 the `alpha` and `beta` parameters used in the simulation.
 
 ### Assess parameter recovery
+
+To condition `simple_poisson` we simply override the `missing` default value for `complaints`:
 
 ```julia
 fake_post = sample(simple_poisson(traps=fake_traps, complaints=fake_complaints), NUTS(), 1_000)
@@ -264,12 +265,20 @@ we conditioned on when fitting the model. (The **bayesplot**
 package [vignettes](http://mc-stan.org/bayesplot/articles/graphical-ppcs.html)
 are a good resource on this topic.)
 
-Here is a plot of the density estimate of the observed data compared to
-200 of the `y_rep` datasets:
+To get a better sense of the fit it's useful to look at the in-sample predictions.
+We simply re-instantiate the model but now with `complaints=missing` again, and then
+sampel from the model _conditioned_ on the chain `fake_post` using `predict`.
 
 ```julia
+# Note: `posterior_predictive` is just a wrapper around `Turing.predict`
+# so we instead end up working with a `Vector{<:NamedTuple}` instead of
+# a `MCMCChains.Chains`. This is to stay consistent with the other tutorials
+# e.g. Soss.jl's tutorial.
 yrep = posterior_predictive(simple_poisson(traps=fake_traps), fake_post)
 ```
+
+Here is a plot of the density estimate of the observed data compared to
+200 of the `yrep` datasets:
 
 ```julia
 ppc_dens_overlay(fake_complaints, yrep[1:200])
@@ -293,17 +302,11 @@ ppc_rootogram(fake_complaints, yrep[1:200])
 
 ### Fit with real data
 
-To fit the model to the actual observed data we'll first create a list to pass
-to Stan using the variables in the `pest_data` data frame:
+To fit the model to the actual observed data, again, we just set the `complaints` to
+the observations and `sample`:
 
 ```julia
-post = sample(simple_poisson(traps=pest_data.traps, complaints=pest_data.complaints), NUTS(), 1_000);
-```
-
-and printing the parameters. What do these tell us?
-
-```julia
-post
+post = sample(simple_poisson(traps=pest_data.traps, complaints=pest_data.complaints), NUTS(), 1_000)
 ```
 
 We can also plot the posterior distributions:
@@ -315,10 +318,12 @@ plot(post)
 
 As we expected, it appears the number of bait stations set in a building is
 associated with the number of complaints about cockroaches that were made in the
-following month. However, we still need to consider how well the model fits.
+following month. However, we still need to consider how well the model fits the data.
 
 
 ### Posterior predictive checking
+
+Let's produce some samples of `complaints` given the chain `post`:
 
 ```julia
 yrep = posterior_predictive(simple_poisson(traps=pest_data.traps), post)
