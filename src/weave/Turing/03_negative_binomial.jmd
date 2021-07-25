@@ -1,0 +1,171 @@
+```julia; echo=false; results="hidden"
+using DrWatson
+@quickactivate "BayesWorkshop2021"
+include(joinpath(srcdir(), "setup.jl"));
+```
+## Modeling count data with the Negative Binomial
+
+When we considered modelling the data using a Poisson, we saw that the model didn't appear to fit as well to the data as we would like. In particular the model underpredicted low and high numbers of complaints, and overpredicted the medium number of complaints. This is one indication of over-dispersion, where the variance is larger than the mean. A Poisson model doesn't fit over-dispersed count data very well because the same parameter $\lambda$, controls both the expected counts and the variance of these counts. The natural alternative to this is the negative binomial model:
+
+$$
+\begin{align*}
+\text{complaints}_{b,t} & \sim \text{Neg-Binomial}(\lambda_{b,t}, \phi) \\
+\lambda_{b,t} & = \exp{(\eta_{b,t})} \\
+\eta_{b,t} &= \alpha + \beta \, {\rm traps}_{b,t} + \beta_{\rm super} \, {\rm super}_{b} + \text{log_sq_foot}_{b}
+\end{align*}
+$$
+
+In Stan the negative binomial mass function we'll use is called  $\texttt{neg_binomial_2_log}(\text{ints} \, y, \text{reals} \, \eta, \text{reals} \, \phi)$  in Stan. Like the `poisson_log` function, this negative binomial mass function that is parameterized in terms of its log-mean, $\eta$, but it also has a precision $\phi$ such that
+
+$$
+\mathbb{E}[y] \, = \lambda = \exp(\eta)
+$$
+
+$$
+\text{Var}[y] = \lambda + \lambda^2/\phi = \exp(\eta) + \exp(\eta)^2 / \phi.
+$$
+
+
+As $\phi$ gets larger the term $\lambda^2 / \phi$ approaches zero and so  the variance of the negative-binomial approaches $\lambda$, i.e., the negative-binomial gets closer and closer to the Poisson.
+
+### Fake data fit: Multiple NB regression
+
+We're going to generate one draw from the fake data model so we can use the data to fit our model and compare the known values of the parameters to the posterior density of the parameters.
+
+Create a dataset to feed into the model.
+
+Now we run our NB regression over the fake data and extract the samples to examine posterior predictive checks and to check whether we've sufficiently recovered our known parameters, $\text{alpha}$ $\texttt{beta}$, .
+
+```julia
+using Turing
+
+function NegativeBinomial2(μ, ϕ)
+    p = 1 / (1 + μ / ϕ)
+    r = ϕ
+
+    return NegativeBinomial(r, p)
+end
+
+@model function multiple_NB_regression(traps, live_in_super, log_sq_foot)
+    alpha ~ Normal(log(4), 1)
+    beta ~ Normal(-0.25, 1)
+    beta_super ~ Normal(-0.5, 1)
+    inv_phi ~ truncated(Normal(1), 0, Inf)
+
+    complaints ~ arraydist(@. NegativeBinomial2(
+        exp(alpha + beta * traps + beta_super * live_in_super + log_sq_foot),
+        inv(inv_phi)
+    ))
+    return (; alpha, beta, beta_super, inv_phi, complaints)
+end
+```
+
+Construct the vector of true values from your simulated dataset and compare to the recovered parameters.
+
+```julia
+N = size(pest_data, 1)
+mean_traps = mean(pest_data.traps)
+fake_traps = rand(filldist(Poisson(mean_traps), N))
+fake_obs = (traps = fake_traps,
+    live_in_super = rand(filldist(Bernoulli(0.5), N)),
+    log_sq_foot = rand(filldist(Normal(1.5, 0.1), N)),
+)
+
+```
+
+```julia
+fake_data = multiple_NB_regression(fake_obs...)()
+```
+```julia
+fake_post = sample(multiple_NB_regression(fake_obs...) | (complaints=fake_data.complaints,), NUTS(), 1_000)
+```
+```julia
+mcmc_recover_hist(fake_post, (alpha = fake_data.alpha,
+    beta = fake_data.beta,
+    beta_super = fake_data.beta_super,
+    inv_phi = fake_data.inv_phi))
+```
+
+### Fit to real data and check the fit
+
+```julia
+obs = (
+    traps = pest_data.traps,
+    live_in_super = pest_data.live_in_super,
+    log_sq_foot = log.(pest_data.sq_footage_p_floor)
+)
+post = sample(multiple_NB_regression(obs...) | (complaints=pest_data.complaints,), NUTS(), 1_000)
+```
+
+Let's look at our predictions vs. the data.
+
+```julia
+yrep = posterior_predictive(multiple_NB_regression(obs...), post)
+yrep = map(eachrow(Array(MCMCChains.group(yrep, :complaints)))) do x
+    (complaints = x, )
+end
+```
+
+```julia
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
+```
+
+It appears that our model now captures both the number of small counts better as well as the tails.
+
+Let's check if the negative binomial model does a better job capturing the number of zeros:
+
+```julia
+using RCall
+ggplot = rimport("ggplot2")
+
+R"""
+prop_zero <- function(x) mean(x == 0)
+"""
+
+ppc_stat(pest_data.complaints, yrep, stat = "prop_zero", binwidth = 0.01)
+```
+
+These look OK, but let's look at the standardized residual plot.
+
+```julia
+
+R"""
+mean_inv_phi <- mean(samps_NB$inv_phi)
+mean_y_rep <- colMeans(y_rep)
+std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
+qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+"""
+
+```
+
+Looks OK, but we still have some very large *standardized* residuals. This might be because we are currently ignoring that the data are clustered by buildings, and that the probability of roach issue may vary substantially across buildings.
+
+```julia
+ppc_rootogram(pest_data.complaints, yrep)
+```
+
+The rootogram now looks much more plausible. We can tell this because now the expected number of complaints matches much closer to the observed number of complaints. However, we still have some larger counts that appear to be outliers for the model.
+
+Check predictions by number of traps:
+
+```julia
+ppc_intervals(pest_data.complaints, yrep, x = pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
+```
+
+We haven't used the fact that the data are clustered by building yet. A posterior  predictive check might elucidate whether it would be a good idea to add the building information into the model.
+
+```julia
+
+R"""
+ppc_stat_grouped(
+  y = stan_dat_simple$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'mean',
+  binwidth = 0.2
+)
+"""
+
+```
+
+We're getting plausible predictions for most building means but some are estimated better than others and some have larger uncertainties than we might expect. If we explicitly model the variation across buildings we may be able to get much better estimates.
