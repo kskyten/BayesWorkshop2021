@@ -40,6 +40,7 @@ Now we run our NB regression over the fake data and extract the samples to exami
 ```julia
 using Turing
 
+# Convenience constructor for the mean-dispersion parameterization of `NegativeBinomial`.
 function NegativeBinomial2(μ, ϕ)
     p = 1 / (1 + μ / ϕ)
     r = ϕ
@@ -51,14 +52,14 @@ end
     alpha ~ Normal(log(4), 1)
     beta ~ Normal(-0.25, 1)
     beta_super ~ Normal(-0.5, 1)
-    inv_phi ~ truncated(Normal(1), 0, Inf)
+    inv_phi ~ truncated(Normal(), 0, Inf)
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
-    @. complaints ~ NegativeBinomial2(
-        exp(alpha + beta * traps + beta_super * live_in_super + log_sq_foot),
-        inv(inv_phi)
-    )
+
+    # TODO: implement the full observe statement using `NegativeBinomial2`
+    @. complaints ~ ...
+
     return (; alpha, beta, beta_super, inv_phi, complaints)
 end
 ```

@@ -189,8 +189,7 @@ Let's encode this probability model in a Turing model.
 using Turing
 
 @model function simple_poisson(; traps, complaints=missing)
-    α ~ Normal(log(4), .1)
-    β ~ Normal(-0.25, .1)
+    # TODO: Implement the prior!
 
     # This will be compiled away by Julia's compiler, i.e.
     # it has zero cost at runtime. It allows us to use `.~`

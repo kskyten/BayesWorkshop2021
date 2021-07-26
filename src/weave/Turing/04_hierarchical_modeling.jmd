@@ -55,6 +55,9 @@ Fit the model to data.
 ```julia
 using Turing
 
+# Conveinence constructor for `truncated(Normal(...), 0, Inf)`.
+# Also let's make the lower-bound a bit larger than 0 to avoid numerical issues.
+# NOTE: IF you run into some when sampling from the prior, just run the piece of code agian.
 HalfNormal(args...) = truncated(Normal(args...), 1e-6, Inf)
 
 function NegativeBinomial2(μ, ϕ)
@@ -73,8 +76,8 @@ end
     beta ~ Normal(-0.25, 1) # coefficient on traps
     inv_phi ~ HalfNormal() # 1/phi (easier to think about prior for 1/phi instead of phi)
 
-    mu ~ MvNormal(alpha .+ building_data * zeta, sigma_mu)
-
+    # TODO: Implement prior for `mu`
+    mu ~ ...
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
@@ -132,18 +135,18 @@ idata = to_arviz(
 )
 ```
 
-Looks as if the divergent parameters, the little red bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
+Looks as if the divergent parameters, the little black bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
 
 ```julia
 plot_trace(idata)
 ```
 
-What we have here is a cloud-like shape, with most of the divergences clustering towards the bottom. We'll see a bit later that we actually want this to look more like a funnel than a cloud, but the divergences are indicating that the sampler can't explore the narrowing neck of the funnel.
+
 
 One way to see why we should expect some version of a funnel is to look at some simulations from the prior, which we can do without MCMC and thus with no risk of sampling problems:
 
 ```julia
-# TODO
+plot_dist_comparison(idata, var_names=["sigma_mu"])
 ```
 
 Of course, if the data is at all informative we shouldn't expect the posterior to look exactly like the prior. But unless the data is incredibly informative about the parameters and the posterior concentrates away from the narrow neck of the funnel, the sampler is going to have to confront the funnel geometry. (See the [Visual MCMC Diagnostics](http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html) vignette for more on this.)
@@ -308,9 +311,10 @@ Fit the model to data and extract the posterior draws needed for our posterior p
 @model function hier_NB_regression_ncp_slopes(; traps, live_in_super, log_sq_foot, building_idx, building_data)
     J, K = size(building_data)
 
-    kappa_raw ~ filldist(Normal(), J)
-    sigma_kappa ~ HalfNormal()
-    gamma ~ filldist(Normal(), K)
+    # TODO: Implement
+    kappa_raw ~ ...
+    sigma_kappa ~ ...
+    gamma ~ ...
 
     sigma_mu ~ HalfNormal()
     alpha ~ Normal(log(4), 1)
@@ -320,7 +324,9 @@ Fit the model to data and extract the posterior draws needed for our posterior p
     mu_raw ~ filldist(Normal(), J)
 
     mu  = alpha .+ building_data * zeta .+ sigma_mu * mu_raw
-    kappa = beta .+ building_data * gamma .+ sigma_kappa * kappa_raw;
+
+    # TODO: Implement
+    kappa = ...
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
