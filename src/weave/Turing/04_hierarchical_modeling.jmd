@@ -327,53 +327,30 @@ ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 This looks quite nice. If we've captured the building-level means well, then the posterior distribution of means by building should match well with the observed means of the quantity of building complaints by month.
 
 ```julia
-R"""
-ppc_stat_grouped(
-  y = stan_dat_hier$complaints,
-  yrep = y_rep,
-  group = pest_data$building_id,
-  stat = 'mean',
-  binwidth = 0.5
-)
-"""
+ppc_stat_grouped(pest_data.complaints, yrep, group=building_id, stat="mean", binwidth=0.5)
 ```
 
 We weren't doing terribly with the building-specific means before, but now they are all well-captured by our model. The model is also able to do a decent job estimating within-building variability:
 
 ```julia
-R"""
-ppc_stat_grouped(
-  y = stan_dat_hier$complaints,
-  yrep = y_rep,
-  group = pest_data$building_id,
-  stat = 'sd',
-  binwidth = 0.5
-)
-"""
+ppc_stat_grouped(pest_data.complaints, yrep, group=building_id, stat="sd", binwidth=0.5)
 ```
 
 Predictions by number of traps:
 
 ```julia
-R"""
-ppc_intervals(
-  y = stan_dat_hier$complaints,
-  yrep = y_rep,
-  x = stan_dat_hier$traps
-) +
-  labs(x = "Number of traps", y = "Number of complaints")
-"""
+ppc_intervals(pest_data.complaints, yrep, x=pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
 ```
 
 Standardized residuals:
 
 ```julia
-R"""
-mean_y_rep <- colMeans(y_rep)
-mean_inv_phi <- mean(as.matrix(fitted_model_NB_hier_ncp, pars = "inv_phi"))
-std_resid <- (stan_dat_hier$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
-qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
-"""
+# Convert into a matrix of size `(num_variables, num_samples)`
+yrep_matrix = mapreduce(hcat, yrep) do y
+    y.complaints
+end;
+
+qqnorm(dropdims(mean(yrep_matrix; dims=2); dims=2), qqline=:R)
 ```
 
 Rootogram:
@@ -387,11 +364,17 @@ ppc_rootogram(pest_data.complaints, yrep)
 We've gotten some new data that extends the number of time points for which we have observations for each building. This will let us explore how to expand the model a bit more with varying *slopes* in addition to the varying intercepts and also, later, also model temporal variation.
 
 ```julia
-
-R"""
-stan_dat_hier <- readRDS('data/pest_data_longer_stan_dat.RDS')
-"""
-
+let path = datadir("pest_data_longer_stan_dat.rds")
+    R"""
+    stan_dat_hier <- readRDS($path)
+    """
+end
+pest_data_longer = rcopy(R"stan_dat_hier")
+pest_data_longer = (; pairs(pest_data_longer)...)
+pest_data_longer = merge(
+    pest_data_longer, 
+    (complaints = Int.(pest_data_longer.complaints), traps = Int.(pest_data_longer.traps))
+)
 ```
 
 Perhaps if the levels of complaints differ by building, the coefficient for the effect of traps on building does too. We can add this to our model and observe the fit.
@@ -424,18 +407,18 @@ Fit the model to data and extract the posterior draws needed for our posterior p
     mu  = alpha .+ building_data * zeta .+ sigma_mu * mu_raw
     kappa = beta .+ building_data * gamma .+ sigma_kappa * kappa_raw;
 
-    # @info "" map(Base.Fix1(broadcast, ForwardDiff.value), (; sigma_mu, sigma_kappa, gamma, alpha, zeta, beta, mu, kappa, inv_phi))
-
-    complaints ~ arraydist(@. NegativeBinomial2(
+    # Allocate if we're going to sample.
+    complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
+    complaints ~ @. NegativeBinomial2(
         exp(mu[building_idx] + kappa[building_idx] * traps + log_sq_foot),
         inv(inv_phi)
-    ))
+    )
     return (; sigma_mu, sigma_kappa, gamma, alpha, zeta, beta, mu, kappa, inv_phi, complaints)
 end
 ```
 
 ```julia
-post_ncp_slopes = sample(hier_NB_regression_ncp_slopes(; obs..., complaints=pest_data.complaints), NUTS(), 1_000)
+post_ncp_slopes = sample(hier_NB_regression_ncp_slopes(; obs..., complaints=pest_data_longer.complaints), NUTS(), 1_000)
 ```
 
 To see if the model infers building-to-building differences in, we can plot a histogram of our marginal posterior distribution for `sigma_kappa`.
@@ -455,5 +438,21 @@ yrep = posterior_predictive(hier_NB_regression_ncp_slopes(; obs...), post_ncp_sl
 ```
 
 ```julia
-ppc_dens_overlay(pest_data.complaints, yrep[1:200])
+ppc_dens_overlay(pest_data_longer.complaints, yrep[1:200])
+```
+
+```julia
+ppc_stat_grouped(pest_data_longer.complaints, yrep, group=pest_data_longer.building_idx, stat="mean", binwidth=0.5)
+```
+
+```julia
+ppc_stat_grouped(pest_data_longer.complaints, yrep, group=pest_data_longer.building_idx, stat="sd", binwidth=0.5)
+```
+
+```julia
+ppc_intervals(pest_data_longer.complaints, yrep, x=pest_data_longer.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
+```
+
+```julia
+ppc_rootogram(pest_data_longer.complaints, yrep)
 ```
