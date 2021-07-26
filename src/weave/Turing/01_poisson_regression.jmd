@@ -252,7 +252,7 @@ parameters would be estimated much more precisely.
 
 To get a better sense of the fit it's useful to look at the in-sample predictions.
 We simply re-instantiate the model but now with `complaints=missing` again, and then
-sampel from the model _conditioned_ on the chain `fake_post` using `predict`.
+sample from the model _conditioned_ on the chain `fake_post` using `predict`.
 
 ```julia
 # Note: `posterior_predictive` is just a wrapper around `Turing.predict`
