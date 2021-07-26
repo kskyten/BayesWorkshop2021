@@ -1,68 +1,164 @@
-# Modeling joint distributions using Soss
+# MeasureTheory
 
-The goal of Bayesian data analysis is to come up with a plausible explanation for some phenomenon or data in the form of a joint distribution. Defining complicated multivariate distributions outright is extremely difficult, so statistician typically decompose the task into defining conditional distributions and place independence assumptions on the interactions between the random variables.
-
-# Model syntax
-
-Soss syntax is designed to closely resemble the typical mathematical notation for Bayesian models.
-
-## Template for defining Soss models
-
-A Soss model is defined by using the model macro.
+MeasureTheory.jl is a package for building and reasoning about measures. For the
+purposes of this workshop you can treat it like Distributions.jl. It
+defines various probability distributions that we can use in our models.
 
 ```julia
-name_of_the_model = @model (unbound, parameters) begin
-    # Define your model here
+using MeasureTheory
+
+x = rand(Normal())
+```
+You can sample multiple values by constructing a power measure.
+
+```julia
+rand(Normal()^10)
+```
+
+MeasureTheory has a very slick way of using alternative parametrizations of the
+same distribution. You simply call the distribution with keyword arguments that
+correspond to the parametrization you want. For example
+
+```julia
+μ = 5
+σ = 10
+τ = 1/σ
+
+# Normal(;μ, σ) is equivalent to Normal(μ=μ, σ=σ)
+logdensity(Normal(;μ, σ)) == logdensity(Normal(;μ, τ))
+```
+
+## Syntax for defining Soss models
+
+A Soss model is defined by using the `@model` macro.
+Each line in the model is either a sampling statement or an assignment.
+Assignments use the usual syntax. Sampling statements use tilde notation with
+the left hand side indicating the random variable following the distribution on
+the right hand side.
+
+```julia
+using Soss
+using MeasureTheory
+
+mymodel = @model begin
+    mu = 10
+    x ~ Normal(mu, 1)
 end
 ```
 
-## Univariate random variables
+Behind the scenes a Soss model is a directed acyclic graph (DAG), where the
+nodes are expressions and the edges are dependencies between the different nodes.
 
-The typical notation $X \sim Normal(\mu, \sigma)$, translates directly to Soss. The objects on the right hand side must implement a rand method.
+You can also add parameters to your models.
+
+```julia
+mymodel2 = @model sigma begin
+    mu = 10
+    x ~ Normal(mu, sigma)
+end
+```
+
+To assign values to these parameters you call the model like a function.
+
+```julia
+mymodel2(sigma=1)
+```
+
+
+## Sampling
+
+You can sample Soss models with the `rand` method.
+
+```julia
+rand(mymodel2(sigma=1))
+```
+
+## Observations
+
+Passing observed values to models can be done with a named tuple after a pipe symbol.
+
+```julia
+mymodel2(sigma=1) | (x=5.,)
+```
 
 ## Independent and identically distributed random variables
 
-It is common to assume that a collection of random variables are independent and identically distributed. This is commonly abbreviated as iid. In Soss, we declare the iid assumption using the iid function. It takes as argument the length of the random vector, for which we are making the iid assumption. For example, we could assume 10 iid standard Normal distributions using
+It is common to have vectors of independent and identically distributed random
+variables in statistical models. Here is how to do it in Soss.
 
 ```julia
-N = 10
-iid(10)(Normal(0, 1))
-```
+iidmodel = @model begin
+    x ~ Normal() |> iid(10)
+end
 
-It is typical to use the pipe operator |> to make the syntax nicer.
-
-```julia
-N = 10
-Normal(0, 1) |> iid(N)
+rand(iidmodel)
 ```
 
 ## Loops
 
-To model a random vector, where the components depend on the index, we use `for` loops. The first argument is a function, which maps the index of a random vector to an expression of the component.
+`For` loops are useful when you want to make a random vector, where the
+components are not identical. The first argument is a function, which is mapped
+over the iterable in the second argument.
 
 ```julia
-For(j -> Normal(theta[j], sigma[j]), 1:J)
+# For(i -> Normal(i, i^2), 1:10)
 ```
 
-It is typical to use Julia's `do` shorthand for defining loops.
+This can be written more concisely using Julia's `do` notation.
 
 ```julia
-For(1:J) do j
-    Normal(θ[j], σ[j])
+manynormals = @model begin
+    x ~ For(1:10) do i
+        Normal(i, i^2)
+    end
 end
+
+rand(manynormals)
 ```
-
-## Free and bound variables
-
-
-# Using Soss models
-
-Once we have defined a model, we can assign values to the unbound parameters to define a joint distribution. Values can be assigned by calling the generated model function with keyword arguments. Once all the parameters are bound, we have a fully defined joint distribution.
 
 # The Bayesian workflow in Soss
 
-## Model transformations
-
 ## Prior predictive
 
+It is convenient to use hyperparameters (parameters of the priors) as arguments
+of the model so that you can see how they affect artificial data you generate
+from the model. This way you can choose weakly informative priors that are
+consistent with you prior beliefs.
+
 ## Posterior predictive
+
+You can sample values from the posterior predictive distribution by first
+sampling from the posterior and then using the likelihood to generate new data
+based on these posterior draws.
+Write a function `posterior_predictive` that samples values from the posterior
+predictive distribution. Hint: use the `predictive` function to create a new
+model for generating data given the parameters.
+
+```julia
+"""
+Sample values from the posterior predictive distribution.
+
+# Arguments
+  - model: a Soss model
+  - posterior_draws: a vector of named tuples sampled from the posterior
+All keyword arguments will be passed to the model.
+
+# Example
+posterior_draws = sample(mymodel(x=x) | (y=y,), dynamichmc())
+yrep = posterior_predictive(mymodel, posterior_draws; y=y)
+"""
+function posterior_predictive(model, posterior_draws; kwargs...)
+end
+```
+
+# Inference primitives
+
+At its core, Soss is all about code generation. You can generate code for
+sampling or evaluating the loglikelihood among other things. You can see all the inference
+primitives by tab completing all the Soss methods starting with `source`.
+Experiment with these methods to generate code for one of the models in this notebook.
+
+```julia
+sourceRand(manynormals)
+```
+
