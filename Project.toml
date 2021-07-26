@@ -1,7 +1,5 @@
 name = "BayesWorkshop2021"
-[compat]
-julia = "1.6.1"
-DrWatson = "2.1.1"
+
 [deps]
 ArviZ = "131c737c-5715-5e2e-ad31-c244f01c1dc7"
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
@@ -18,5 +16,12 @@ RData = "df47a6cb-8c03-5eed-afd8-b6050d6c41da"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SampleChainsDynamicHMC = "6d9fd711-e8b2-4778-9c70-c1dfb499d4c4"
 Soss = "8ce77f84-9b61-11e8-39ff-d17a774bf41c"
+StatsFuns = "4c63d2b9-4356-54db-8cca-17b64c39e42c"
+StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
+Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 VegaLite = "112f6efa-9a02-5b7d-90c0-432ed331239a"
 Weave = "44d3d7a6-8a23-5bf8-98c5-b353f8df5ec9"
+
+[compat]
+DrWatson = "2.1.1"
+julia = "1.6.1"
