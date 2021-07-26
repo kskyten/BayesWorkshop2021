@@ -3,7 +3,7 @@
 ## Getting started
 1. Clone this project.
 2. Run `julia --project -e 'using Pkg; Pkg.instantiate()'`
-3. Run `julia --project script/weave.jl`
+3. Run `julia --project scripts/weave.jl`
 4. At this point all the notebooks should be available in `notebooks`.
 5. Finally to install R-dependencies, run `julia --project -e 'include("scripts/install_deps.jl"); install_rcall_deps(); install_soss_deps()'`.
 
