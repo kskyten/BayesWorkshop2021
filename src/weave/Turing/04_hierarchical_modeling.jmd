@@ -428,7 +428,7 @@ plot(post_ncp_slopes[[:sigma_kappa]])
 ```
 
 ```julia
-plot(post_ncp_slopes[[:beta]])
+plot(MCMCChains.group(post_ncp_slopes, :kappa_raw))
 ```
 
 While the model can't specifically rule out zero from the posterior, it does have mass at small non-zero numbers, so we should leave in the hierarchy over $\texttt{kappa}$. Plotting the marginal data density again, we can see the model still looks well calibrated.
