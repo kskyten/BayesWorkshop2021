@@ -192,7 +192,14 @@ using Turing
     α ~ Normal(log(4), .1)
     β ~ Normal(-0.25, .1)
 
-    complaints ~ arraydist(@. Poisson(exp(α + β * traps)))
+    # This will be compiled away by Julia's compiler, i.e.
+    # it has zero cost at runtime. It allows us to use `.~`
+    # both to sample and observe.
+    if complaints === missing
+        complaints = Vector{Int}(undef, length(traps))
+    end
+
+    complaints .~ @. Poisson(exp(α + β * traps))
 
     return (; α, β, complaints)
 end
@@ -242,12 +249,6 @@ simulating so few observations that the posterior uncertainty remains rather
 large, but it looks at least _plausible_ ($\alpha$ and $\beta$ are contained
 within the histograms). If we did the simulation with many more observations the
 parameters would be estimated much more precisely.
-
-We should also check if the `y_rep` datasets (in-sample predictions) that we coded
-in the `generated quantities` block are similar to the `y` (complaints) values
-we conditioned on when fitting the model. (The **bayesplot**
-package [vignettes](http://mc-stan.org/bayesplot/articles/graphical-ppcs.html)
-are a good resource on this topic.)
 
 To get a better sense of the fit it's useful to look at the in-sample predictions.
 We simply re-instantiate the model but now with `complaints=missing` again, and then
