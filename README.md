@@ -1,5 +1,11 @@
 # Bayes Workshop
 
+## Getting started
+1. Clone this project.
+2. Run `julia --project -e 'using Pkg; Pkg.instantiate()'`
+3. Run `julia --project src/weave.jl`
+4. At this point all the notebooks should be available in `notebooks`.
+
 ## Dependencies
 
 You need to install the R dependencies either through your system R or using
