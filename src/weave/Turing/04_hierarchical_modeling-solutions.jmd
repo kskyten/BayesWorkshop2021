@@ -134,7 +134,7 @@ idata = to_arviz(
 )
 ```
 
-Looks as if the divergent parameters, the little red bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
+Looks as if the divergent parameters, the little black bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
 
 ```julia
 plot_trace(idata, var_names=["sigma_mu"])
@@ -185,8 +185,7 @@ Fit the model to the data.
 
 ```julia
 @model function hier_NB_regression_ncp(; traps, live_in_super, log_sq_foot, building_idx, building_data, complaints=missing)
-    K = size(building_data)[2]
-    J = size(building_data)[1]
+    J, K = size(building_data)
 
     sigma_mu ~ HalfNormal()
     alpha ~ Normal(log(4), 1)
@@ -224,7 +223,7 @@ idata_ncp = to_arviz(
 ```
 
 ```julia
-plot_trace(idata_ncp)
+plot_trace(idata_ncp, var_names=["sigma_mu"])
 ```
 
 ```julia
@@ -241,27 +240,24 @@ plot_ppc(idata_ncp)
 yrep = posterior_predictive(hier_NB_regression_ncp(; obs...), post_ncp)
 ```
 
-The marginal plot, again.
-
-```julia
-ppc_dens_overlay(pest_data.complaints, yrep[1:200])
-```
-
 This looks quite nice. If we've captured the building-level means well, then the posterior distribution of means by building should match well with the observed means of the quantity of building complaints by month.
 
 ```julia
-ppc_stat_grouped(pest_data.complaints, yrep, group=building_id, stat="mean", binwidth=0.5)
+ppc_stat_grouped(pest_data.complaints, yrep, group=pest_data.building_idx, stat="mean", binwidth=0.5)
 ```
 
 We weren't doing terribly with the building-specific means before, but now they are all well-captured by our model. The model is also able to do a decent job estimating within-building variability:
 
 ```julia
-ppc_stat_grouped(pest_data.complaints, yrep, group=building_id, stat="sd", binwidth=0.5)
+ppc_stat_grouped(pest_data.complaints, yrep, group=pest_data.building_idx, stat="sd", binwidth=0.5)
 ```
 
 Predictions by number of traps:
 
 ```julia
+using RCall
+ggplot = rimport("ggplot2")
+
 ppc_intervals(pest_data.complaints, yrep, x=pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
 ```
 
@@ -313,7 +309,7 @@ $$
 Fit the model to data and extract the posterior draws needed for our posterior predictive checks.
 
 ```julia
-@model function hier_NB_regression_ncp_slopes(; traps, live_in_super, log_sq_foot, building_idx, building_data)
+@model function hier_NB_regression_ncp_slopes(; traps, log_sq_foot, building_idx, building_data, complaints)
     J, K = size(building_data)
 
     kappa_raw ~ filldist(Normal(), J)
@@ -332,7 +328,7 @@ Fit the model to data and extract the posterior draws needed for our posterior p
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
-    complaints ~ @. NegativeBinomial2(
+    @. complaints ~ NegativeBinomial2(
         exp(mu[building_idx] + kappa[building_idx] * traps + log_sq_foot),
         inv(inv_phi)
     )
@@ -341,6 +337,13 @@ end
 ```
 
 ```julia
+obs = (
+    traps = pest_data_longer.traps,
+    log_sq_foot = pest_data_longer.log_sq_foot,
+    building_idx = pest_data_longer.building_idx,
+    building_data = building_data
+);
+
 post_ncp_slopes = sample(hier_NB_regression_ncp_slopes(; obs..., complaints=pest_data_longer.complaints), NUTS(), 1_000)
 ```
 
