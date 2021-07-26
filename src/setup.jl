@@ -5,6 +5,7 @@ using Turing
 
 include("posterior_predictive.jl")
 include("bayesplot.jl")
+include("arviz.jl")
 
 using Dates
 using Feather
