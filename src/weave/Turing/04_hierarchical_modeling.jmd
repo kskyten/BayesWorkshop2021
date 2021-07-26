@@ -73,14 +73,15 @@ end
     beta ~ Normal(-0.25, 1) # coefficient on traps
     inv_phi ~ HalfNormal() # 1/phi (easier to think about prior for 1/phi instead of phi)
 
-    # TODO: Implement prior for `mu`
+    # TODO: Implement
     mu ~ ...
+
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
     @. complaints ~ NegativeBinomial2(
-        exp(mu[building_idx] + beta * traps + log_sq_foot),
-        inv(inv_phi)
+        clamp(exp(mu[building_idx] + beta * traps + log_sq_foot), 1e-3, 1e5),
+        clamp(inv(inv_phi), 1e-3, 100)
     )
     return (; sigma_mu, alpha, zeta, beta, mu, inv_phi, complaints)
 end
@@ -160,7 +161,17 @@ What we have here is a cloud-like shape, with most of the divergences clustering
 One way to see why we should expect some version of a funnel is to look at some simulations from the prior, which we can do without MCMC and thus with no risk of sampling problems:
 
 ```julia
-plot_dist_comparison(idata, var_names=["sigma_mu"])
+prior_samples = sample(hier_NB_regression(; obs..., complaints=pest_data.complaints), Prior(), 1_000);
+let chain = prior_samples
+    df = transform(
+        DataFrame(chain[[:sigma_mu, Symbol("mu[4]")]]),
+        :sigma_mu => ByRow(log) => :log_sigma_mu,
+        # `StatsPlots.@df` isn't to happy about `Symbol(...)`, so we
+        # just rename it to `:mu4`.
+        Symbol("mu[4]") => identity => :mu4
+    )
+    @df df cornerplot([:log_sigma_mu :mu4], compact=true)
+end
 ```
 
 Of course, if the data is at all informative we shouldn't expect the posterior to look exactly like the prior. But unless the data is incredibly informative about the parameters and the posterior concentrates away from the narrow neck of the funnel, the sampler is going to have to confront the funnel geometry. (See the [Visual MCMC Diagnostics](http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html) vignette for more on this.)
@@ -181,14 +192,7 @@ $$
 \mu_b \sim \text{Normal}(\alpha + \texttt{building_data} \, \zeta, \sigma_{\mu})
 $$
 
-```
-transformed parameters {
-  vector[J] mu;
-  mu = alpha + building_data * zeta + sigma_mu * mu_raw;
-}
-```
-
-This gives $\texttt{mu}$ a $\text{Normal}(\alpha + \texttt{building_data}\, \zeta, \sigma_\mu)$ distribution, but it decouples the dependence of the density of each element of $\texttt{mu}$ from $\texttt{sigma_mu}$ ($\sigma_\mu$). hier*NB*regression_ncp.stan uses the non-centered parameterization for $\texttt{mu}$. We will examine the effective sample size of the fitted model to see whether we've fixed the problem with our reparameterization.
+This gives $\texttt{mu}$ a $\text{Normal}(\alpha + \texttt{building_data}\, \zeta, \sigma_\mu)$ distribution, but it decouples the dependence of the density of each element of $\texttt{mu}$ from $\texttt{sigma_mu}$ ($\sigma_\mu$). We will examine the effective sample size of the fitted model to see whether we've fixed the problem with our reparameterization.
 
 Fit the model to the data.
 
@@ -208,8 +212,8 @@ Fit the model to the data.
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
     @. complaints ~ NegativeBinomial2(
-        exp(mu[building_idx] + beta * traps + log_sq_foot),
-        inv(inv_phi)
+        clamp(exp(mu[building_idx] + beta * traps + log_sq_foot), 1e-3, 1e5),
+        clamp(inv(inv_phi), 1e-3, 100)
     )
     return (; sigma_mu, alpha, zeta, beta, mu, inv_phi, complaints)
 end
@@ -221,7 +225,7 @@ Examining the fit of the new model
 post_ncp = sample(hier_NB_regression_ncp(; obs..., complaints=pest_data.complaints), NUTS(), 1_000);
 ```
 
-This has improved the effective sample sizes of $\texttt{mu}$. We extract the parameters to run our usual posterior predictive checks.
+This has improved the effective sample sizes of $\texttt{mu}$. We now run our usual posterior predictive checks.
 
 ```julia
 idata_ncp = to_arviz(
@@ -268,11 +272,8 @@ plot_parallel(idata_ncp, var_names=["sigma_mu", "mu_raw"])
 Notice how the numerical errors are now much reduced (depending on your random seed, they might be completely gone!).
 
 ```julia
-plot_ppc(idata_ncp)
-```
-
-```julia
 yrep = posterior_predictive(hier_NB_regression_ncp(; obs...), post_ncp)
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 ```
 
 This looks quite nice. If we've captured the building-level means well, then the posterior distribution of means by building should match well with the observed means of the quantity of building complaints by month.
