@@ -3,7 +3,7 @@
 ## Getting started
 1. Clone this project.
 2. Run `julia --project -e 'using Pkg; Pkg.instantiate()'`
-3. Run `julia --project src/weave.jl`
+3. Run `julia --project script/weave.jl`
 4. At this point all the notebooks should be available in `notebooks`.
 
 NB: Make sure you're using Julia 1.6.1 or greater. You might need to replace `julia` with `julia-1.6` in the above.
