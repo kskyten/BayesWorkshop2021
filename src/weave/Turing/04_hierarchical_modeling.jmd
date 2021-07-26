@@ -160,13 +160,9 @@ end
 
     mu ~ MvNormal(alpha .+ building_data * zeta, sigma_mu)
 
-    # This will be compiled away by Julia's compiler, i.e.
-    # it has zero cost at runtime. It allows us to use `.~`
-    # both to sample and observe.
-    if complaints === missing
-        complaints = Vector{Int}(undef, length(traps))
-    end
 
+    # Allocate if we're going to sample.
+    complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
     complaints .~ @. NegativeBinomial2(
         exp(mu[building_idx] + beta * traps + log_sq_foot),
         inv(inv_phi)
@@ -217,7 +213,7 @@ plot(post[[:sigma_mu]])
 using ArviZ, LinearAlgebra
 
 # https://arviz-devs.github.io/ArviZ.jl/stable/quickstart/#Convert-to-InferenceData
-function to_arviz(prior_model, conditioned_model, posterior_samples)
+function to_arviz(prior_model::Turing.Model, conditioned_model::Turing.Model, posterior_samples::MCMCChains.Chains)
     # Sample from the prior of the latent variables, i.e. everything
     # except `complaints`.
     prior_samples = sample(conditioned_model, Prior(), 1_000, progress=false);
@@ -316,13 +312,8 @@ Fit the model to the data.
 
     mu  = alpha .+ building_data * zeta .+ sigma_mu .* mu_raw
 
-    # This will be compiled away by Julia's compiler, i.e.
-    # it has zero cost at runtime. It allows us to use `.~`
-    # both to sample and observe.
-    if complaints === missing
-        complaints = Vector{Int}(undef, length(traps))
-    end
-
+    # Allocate if we're going to sample.
+    complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
     complaints .~ @. NegativeBinomial2(
         exp(mu[building_idx] + beta * traps + log_sq_foot),
         inv(inv_phi)
