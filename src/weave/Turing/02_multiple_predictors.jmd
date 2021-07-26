@@ -39,6 +39,8 @@ footage of the building and the number of complaints received:
 
 ```julia
 using RCall
+using StatsFuns
+
 ggplot = rimport("ggplot2")
 ggplot.ggplot(
     select(
