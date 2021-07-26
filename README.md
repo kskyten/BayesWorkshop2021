@@ -8,7 +8,7 @@ in `scripts/install_deps.jl`
 
 ## Generating the notebooks
 
-Run `scripts/weave.jl`to generate Jupyter notebooks to `notebooks/{RCall,Soss}`.
+Run `scripts/weave.jl`to generate Jupyter notebooks to `notebooks/{RCall,Soss,Turing}`.
 
 ## Code
 
