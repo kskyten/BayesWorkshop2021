@@ -78,7 +78,7 @@ end
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
-    complaints .~ @. NegativeBinomial2(
+    @. complaints ~ NegativeBinomial2(
         exp(mu[building_idx] + beta * traps + log_sq_foot),
         inv(inv_phi)
     )
@@ -191,7 +191,7 @@ Fit the model to the data.
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
-    complaints .~ @. NegativeBinomial2(
+    @. complaints ~ NegativeBinomial2(
         exp(mu[building_idx] + beta * traps + log_sq_foot),
         inv(inv_phi)
     )

@@ -74,7 +74,7 @@ using Turing
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
-    complaints .~ @. Poisson(exp(alpha + beta * traps + beta_super * live_in_super + log_sq_foot))
+    @. complaints ~ Poisson(exp(alpha + beta * traps + beta_super * live_in_super + log_sq_foot))
     return (; alpha, beta, beta_super, complaints)
 end
 ```

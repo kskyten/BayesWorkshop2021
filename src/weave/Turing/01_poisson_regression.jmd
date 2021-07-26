@@ -199,7 +199,7 @@ using Turing
         complaints = Vector{Int}(undef, length(traps))
     end
 
-    complaints .~ @. Poisson(exp(α + β * traps))
+    @. complaints ~ Poisson(exp(α + β * traps))
 
     return (; α, β, complaints)
 end
