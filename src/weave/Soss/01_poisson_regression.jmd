@@ -205,7 +205,7 @@ Let's encode this probability model in a Soss.
 using Soss
 using MeasureTheory
 
-simple_poisson = @model traps begin
+simple_poisson = @model (traps, μ_α, σ_α, μ_β, σ_β) begin
     α ~ Normal(log(4), .1)
     β ~ Normal(-0.25, .1)
 
@@ -228,9 +228,20 @@ our model.
 N = size(pest_data, 1)
 mean_traps = mean(pest_data.traps)
 fake_traps = rand(Poisson(mean_traps)^N)
+args = (
+    traps = fake_traps,
+    μ_α = log(4),
+    σ_α = .1,
+    μ_β = -0.25,
+    σ_β = .1
+)
 
-fake_data = rand(simple_poisson(traps = fake_traps))
-fake_complaints = collect(fake_data.complaints);
+fake_datas = rand.(simple_poisson(args) for x in 1:100)
+fake_data = first(fake_datas)
+```
+
+```julia
+maximum(maximum(map(x -> x.complaints, fake_datas)))
 ```
 
 ### Fit the model to the fake data:
