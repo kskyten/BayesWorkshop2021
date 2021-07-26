@@ -45,6 +45,7 @@ We'll need to do some more data prep before we can fit our models. Firstly to us
 
 ```julia
 include(joinpath(srcdir(), "building_data.jl"))
+building_data
 ```
 
 ### Fit the hierarchical model
