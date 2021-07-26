@@ -6,6 +6,8 @@
 3. Run `julia --project src/weave.jl`
 4. At this point all the notebooks should be available in `notebooks`.
 
+NB: Make sure you're using Julia 1.6.1 or greater. You might need to replace `julia` with `julia-1.6` in the above.
+
 ## Dependencies
 
 You need to install the R dependencies either through your system R or using
