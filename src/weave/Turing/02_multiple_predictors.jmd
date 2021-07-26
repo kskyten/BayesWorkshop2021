@@ -70,7 +70,9 @@ using Turing
     beta_super ~ Normal(-0.5, 1)
     alpha ~ Normal(log(4), 1)
 
-    complaints ~ arraydist(@. Poisson(exp(alpha + beta * traps + beta_super * live_in_super + log_sq_foot)))
+    # Allocate if we're going to sample.
+    complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
+    complaints .~ @. Poisson(exp(alpha + beta * traps + beta_super * live_in_super + log_sq_foot))
     return (; alpha, beta, beta_super, complaints)
 end
 ```

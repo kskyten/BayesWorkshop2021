@@ -1,6 +1,8 @@
-# Modeling joint distributions using Soss
+# Modeling joint distributions using Turing
 
 The goal of Bayesian data analysis is to come up with a plausible explanation for some phenomenon or data in the form of a joint distribution. Defining complicated multivariate distributions outright is extremely difficult, so statistician typically decompose the task into defining conditional distributions and place independence assumptions on the interactions between the random variables.
+
+To get a proper introduction to Turing.jl, its syntax and everything surrounding the ecosystem, see [https://turing.ml/](https://turing.ml/stable/).
 
 # Model syntax
 
@@ -11,10 +13,18 @@ Turing syntax is designed to closely resemble the typical mathematical notation 
 A Turing model is defined by using the model macro.
 
 ```julia
-@model function name_of_the_model(unbound, parameters)
-    # Define your model here
+@model function name_of_the_model(y; sigma=1.0)
+    # Define your model here.
+    sigma ~ InverseGamma(2, 3)
+    x ~ Normal(0, sigma)
+
+    y ~ MvNormal(x, I)
 end
 ```
+
+Note that arguments are `missing`, e.g. if we instead set `sigma=missing`, `sigma` would be considered a random variable to be sampled and/or inferred rather than something to observe on (as we do in the above).
+
+A Turing model is then instantiated with some data, e.g. `name_of_the_model(randn(10))`, to condition it.
 
 ## Univariate random variables
 
@@ -22,11 +32,13 @@ The typical notation $X \sim Normal(\mu, \sigma)$, translates directly to Turing
 
 ## Independent and identically distributed random variables
 
-It is common to assume that a collection of random variables are independent and identically distributed. This is commonly abbreviated as iid. In Turing, we declare the iid assumption using the `filldist(dist, n)` function. For example, we could assume 10 iid standard Normal distributions using
+It is common to assume that a collection of random variables are independent and identically distributed. This is commonly abbreviated as iid. In Turing, we declare the iid assumption by simply using `.~` instead of `~`. For example, we could assume 10 iid standard Normal random variables using the statement
 
 ```julia
-filldist(Normal(0, 1), 10)
+x .~ Normal(0, 1)
 ```
+
+where `x` is a `Vector` of length `10`. Note that if you want to sample `x` this way, you need to allocate a container where we can put the values (see below). Or you can just use a for-loop:
 
 ## Loops
 
@@ -54,12 +66,3 @@ end
 
 but this would lead to type-unstable code and hence a loss in performance.
 
-# Using Turing models
-
-Once we have defined a model, we can assign values to the unbound parameters to define a joint distribution. Values can be assigned by calling the generated model function with keyword arguments. Once all the parameters are bound, we have a fully defined joint distribution.
-
-# The Bayesian workflow in Turing
-
-## Prior predictive
-
-## Posterior predictive

@@ -428,9 +428,13 @@ idata = to_arviz(
 giving us an `InferenceData` instance, which in turn gives us access to ArviZ's toolbox, e.g. we can compare the prior distribution and the posterior distribution to see if we actually learned anything by calling `plot_dist_comparison`:
 
 ```julia
-plot_dist_comparison(idata_ncp, var_names=["sigma_mu"])
+plot_dist_comparison(idata)
 ```
 
-Hey, we did!
+Hey, we did! Or equivalent of the `ppc_dens_overlay` from above:
+
+```julia
+plot_ppc(idata)
+```
 
 We'll be using more of ArviZ's functionality later on.
