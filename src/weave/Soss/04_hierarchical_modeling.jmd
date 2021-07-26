@@ -75,13 +75,15 @@ building_data_mat = Matrix(building_data)
 
 ```julia
 using RCall
-R"""
-library(dplyr)
-library(lubridate)
+let dir = datadir("pest_data.rds")
+    R"""
+    library(dplyr)
+    library(lubridate)
 
-pest_data <- readRDS('../../data/pest_data.rds')
-N_buildings <- length(unique(pest_data$building_id))
-"""
+    pest_data <- readRDS($dir)
+    N_buildings <- length(unique(pest_data$building_id))
+    """
+end
 ```
 
 ```julia
@@ -156,21 +158,24 @@ hier_NB_regression = @model (traps, live_in_super, log_sq_foot, building_idx, bu
 
     complaints ~ For(eachindex(traps)) do i
         r = inv(inv_phi)
-        logλ = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
-        NegativeBinomial(;r, logλ)
+        λ = exp(mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i])
+        NegativeBinomial(;r, λ)
     end
 end
 ```
 
 ```julia
 using SampleChainsDynamicHMC
+# Add the `log_sq_foot` as in 02.
+transform!(pest_data, :total_sq_foot => ByRow(total_sq_foot -> log(total_sq_foot / 1e4)) => :log_sq_foot)
+
 obs = (
     traps = pest_data.traps,
     live_in_super = pest_data.live_in_super,
-    log_sq_foot = log.(pest_data.sq_footage_p_floor),
+    log_sq_foot = pest_data.log_sq_foot,
     building_idx = pest_data.building_idx,
     building_data = building_data
-)
+);
 post = sample(hier_NB_regression(obs) | (complaints=pest_data.complaints,), dynamichmc())
 
 ```
@@ -186,59 +191,19 @@ In this example we will see that we have divergent transitions because we need t
 1. Examining the fitted parameter values, including the effective sample size
 2. Traceplots and scatterplots that reveal particular patterns in locations of the divergences.
 
-First let's extract the fits from the model.
-
 ```julia
-using ArviZ
-
-idata = from_samplechains(
-    post;
-    posterior_predictive=postpred,
-    prior=prior_priorpred,
-    prior_predictive=[:y],
-    observed_data=observed_data,
-    constant_data=constant_data,
-    coords=Dict("school" => schools),
-    dims=Dict("y" => ["school"], "σ" => ["school"], "θ" => ["school"]),
-    library=Soss,
-)
 ```
 
-Then we print the fits for the parameters that are of most interest.
+You can see that the effective samples are somewhat low for many of the parameters relative to the total number of samples. This alone isn't indicative of the need to reparameterize, but it indicates that we should look further at the trace plots and pairs plots. First let's look at the traceplots to see if the divergent transitions form a pattern.
 
 ```julia
-
-
-```
-
-You can see that the effective samples are quite low for many of the parameters relative to the total number of samples. This alone isn't indicative of the need to reparameterize, but it indicates that we should look further at the trace plots and pairs plots. First let's look at the traceplots to see if the divergent transitions form a pattern.
-
-```julia
-mcmc_trace(post.sigma_mu, np=nuts_params())
-
-R"""
-# use as.array to keep the markov chains separate for trace plots
-mcmc_trace(
-  as.array(fitted_model_NB_hier,pars = 'sigma_mu'),
-  np = nuts_params(fitted_model_NB_hier),
-  window = c(500,1000)
-)
-"""
+#idata = to_arviz()
 ```
 
 Looks as if the divergent parameters, the little red bars underneath the traceplots correspond to samples where the sampler gets stuck at one parameter value for $\sigma_\mu$.
 
 ```julia
-R"""
-# assign to object so we can compare to another plot later
-scatter_with_divs <- mcmc_scatter(
-  as.array(fitted_model_NB_hier),
-  pars = c("mu[4]", 'sigma_mu'),
-  transform = list('sigma_mu' = "log"),
-  np = nuts_params(fitted_model_NB_hier)
-)
-scatter_with_divs
-"""
+plot_trace(idata)
 ```
 
 What we have here is a cloud-like shape, with most of the divergences clustering towards the bottom. We'll see a bit later that we actually want this to look more like a funnel than a cloud, but the divergences are indicating that the sampler can't explore the narrowing neck of the funnel.
@@ -246,17 +211,7 @@ What we have here is a cloud-like shape, with most of the divergences clustering
 One way to see why we should expect some version of a funnel is to look at some simulations from the prior, which we can do without MCMC and thus with no risk of sampling problems:
 
 ```julia
-R"""
-N_sims <- 1000
-log_sigma <- rep(NA, N_sims)
-theta <- rep(NA, N_sims)
-for (j in 1:N_sims) {
-  log_sigma[j] <- rnorm(1, mean = 0, sd = 1)
-  theta[j] <- rnorm(1, mean = 0, sd = exp(log_sigma[j]))
-}
-draws <- cbind("mu" = theta, "log(sigma_mu)" = log_sigma)
-mcmc_scatter(draws)
-"""
+# TODO
 ```
 
 Of course, if the data is at all informative we shouldn't expect the posterior to look exactly like the prior. But unless the data is incredibly informative about the parameters and the posterior concentrates away from the narrow neck of the funnel, the sampler is going to have to confront the funnel geometry. (See the [Visual MCMC Diagnostics](http://mc-stan.org/bayesplot/articles/visual-mcmc-diagnostics.html) vignette for more on this.)
@@ -264,13 +219,7 @@ Of course, if the data is at all informative we shouldn't expect the posterior t
 Another way to look at the divergences is via a parallel coordinates plot:
 
 ```julia
-R"""
-parcoord_with_divs <- mcmc_parcoord(
-  as.array(fitted_model_NB_hier, pars = c("sigma_mu", "mu")),
-  np = nuts_params(fitted_model_NB_hier)
-)
-parcoord_with_divs
-"""
+plot_parallel(idata, var_names=["sigma_mu", "mu"])
 ```
 
 Again, we see evidence that our problems concentrate when $\texttt{sigma_mu}$ is small.
@@ -310,8 +259,8 @@ hier_NB_regression_ncp = @model (traps, live_in_super, log_sq_foot, building_idx
 
     complaints ~ For(eachindex(traps)) do i
         r = inv(inv_phi)
-        logλ = mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i]
-        NegativeBinomial(;r, logλ)
+        λ = exp(mu[building_idx[i]] + beta * traps[i] + log_sq_foot[i])
+        NegativeBinomial(;r, λ)
     end
 end
 ```
@@ -319,37 +268,31 @@ end
 Examining the fit of the new model
 
 ```julia
-post = sample(hier_NB_regression_ncp(obs) | (complaints=pest_data.complaints,), dynamichmc())
+post_ncp = sample(hier_NB_regression_ncp(obs) | (complaints=pest_data.complaints,), dynamichmc())
 ```
 
 This has improved the effective sample sizes of $\texttt{mu}$. We extract the parameters to run our usual posterior predictive checks.
 
 ```julia
-R"""
-scatter_no_divs <- mcmc_scatter(
-  as.array(fitted_model_NB_hier_ncp),
-  pars = c("mu[4]", 'sigma_mu'),
-  transform = list('sigma_mu' = "log"),
-  np = nuts_params(fitted_model_NB_hier_ncp)
-)
-bayesplot_grid(scatter_with_divs, scatter_no_divs,
-               grid_args = list(ncol = 2), ylim = c(-11, 1))
-"""
+#idata_ncp = to_arviz()
 ```
 
 ```julia
-R"""
-parcoord_no_divs <- mcmc_parcoord(
-  as.array(fitted_model_NB_hier_ncp, pars = c("sigma_mu", "mu")),
-  np = nuts_params(fitted_model_NB_hier_ncp)
-)
-bayesplot_grid(parcoord_with_divs, parcoord_no_divs,
-               ylim = c(-3, 3))
-"""
+plot_trace(idata_ncp)
 ```
 
 ```julia
+plot_parallel(idata_ncp, var_names=["sigma_mu", "mu_raw"])
+```
 
+Notice how the numerical errors are now much reduced (depending on your random seed, they might be completely gone!).
+
+```julia
+plot_ppc(idata_ncp)
+```
+
+```julia
+#yrep = posterior_predictive(hier_NB_regression_ncp(; obs...), post_ncp)
 ```
 
 The marginal plot, again.
@@ -361,60 +304,36 @@ ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 This looks quite nice. If we've captured the building-level means well, then the posterior distribution of means by building should match well with the observed means of the quantity of building complaints by month.
 
 ```julia
-R"""
-ppc_stat_grouped(
-  y = stan_dat_hier$complaints,
-  yrep = y_rep,
-  group = pest_data$building_id,
-  stat = 'mean',
-  binwidth = 0.5
-)
-"""
+ppc_stat_grouped(pest_data.complaints, yrep, group=building_id, stat="mean", binwidth=0.5)
 ```
 
 We weren't doing terribly with the building-specific means before, but now they are all well-captured by our model. The model is also able to do a decent job estimating within-building variability:
 
 ```julia
-R"""
-ppc_stat_grouped(
-  y = stan_dat_hier$complaints,
-  yrep = y_rep,
-  group = pest_data$building_id,
-  stat = 'sd',
-  binwidth = 0.5
-)
-"""
+ppc_stat_grouped(pest_data.complaints, yrep, group=building_id, stat="sd", binwidth=0.5)
 ```
 
 Predictions by number of traps:
 
 ```julia
-R"""
-ppc_intervals(
-  y = stan_dat_hier$complaints,
-  yrep = y_rep,
-  x = stan_dat_hier$traps
-) +
-  labs(x = "Number of traps", y = "Number of complaints")
-"""
+ppc_intervals(pest_data.complaints, yrep, x=pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
 ```
 
 Standardized residuals:
 
 ```julia
-R"""
-mean_y_rep <- colMeans(y_rep)
-mean_inv_phi <- mean(as.matrix(fitted_model_NB_hier_ncp, pars = "inv_phi"))
-std_resid <- (stan_dat_hier$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
-qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
-"""
+# Convert into a matrix of size `(num_variables, num_samples)`
+yrep_matrix = mapreduce(hcat, yrep) do y
+    y.complaints
+end;
+
+qqnorm(dropdims(mean(yrep_matrix; dims=2); dims=2), qqline=:R)
 ```
 
 Rootogram:
 
 ```julia
 ppc_rootogram(pest_data.complaints, yrep)
-
 ```
 
 ### Varying intercepts *and* varying slopes
@@ -422,11 +341,17 @@ ppc_rootogram(pest_data.complaints, yrep)
 We've gotten some new data that extends the number of time points for which we have observations for each building. This will let us explore how to expand the model a bit more with varying *slopes* in addition to the varying intercepts and also, later, also model temporal variation.
 
 ```julia
-
-R"""
-stan_dat_hier <- readRDS('data/pest_data_longer_stan_dat.RDS')
-"""
-
+let path = datadir("pest_data_longer_stan_dat.rds")
+    R"""
+    stan_dat_hier <- readRDS($path)
+    """
+end
+pest_data_longer = rcopy(R"stan_dat_hier")
+pest_data_longer = (; pairs(pest_data_longer)...)
+pest_data_longer = merge(
+    pest_data_longer, 
+    (complaints = Int.(pest_data_longer.complaints), traps = Int.(pest_data_longer.traps))
+)
 ```
 
 Perhaps if the levels of complaints differ by building, the coefficient for the effect of traps on building does too. We can add this to our model and observe the fit.
@@ -462,8 +387,8 @@ hier_NB_regression_ncp_slopes = @model (traps, live_in_super, log_sq_foot, build
 
     complaints ~ For(eachindex(traps)) do i
         r = inv(inv_phi)
-        logλ = mu[building_idx[i]] + kappa[building_idx[i]] * traps[i] + log_sq_foot[i]
-        NegativeBinomial(;r, logλ)
+        λ = exp(mu[building_idx[i]] + kappa[building_idx[i]] * traps[i] + log_sq_foot[i])
+        NegativeBinomial(;r, λ)
     end
 end
 ```
@@ -471,29 +396,35 @@ end
 To see if the model infers building-to-building differences in, we can plot a histogram of our marginal posterior distribution for `sigma_kappa`.
 
 ```julia
-R"""
-mcmc_hist(
-  as.matrix(fitted_model_NB_hier_slopes, pars = "sigma_kappa"),
-  binwidth = 0.005
-)
-"""
+plot(post_ncp_slopes[[:sigma_kappa]])
 ```
 
 ```julia
-
-```
-
-```julia
-R"""
-mcmc_hist(
-  as.matrix(fitted_model_NB_hier_slopes, pars = "beta"),
-  binwidth = 0.005
-)
-"""
+plot(MCMCChains.group(post_ncp_slopes, :kappa_raw))
 ```
 
 While the model can't specifically rule out zero from the posterior, it does have mass at small non-zero numbers, so we should leave in the hierarchy over $\texttt{kappa}$. Plotting the marginal data density again, we can see the model still looks well calibrated.
 
 ```julia
-ppc_dens_overlay(pest_data.complaints, yrep[1:200])
+yrep = posterior_predictive(hier_NB_regression_ncp_slopes(; obs...), post_ncp_slopes)
+```
+
+```julia
+ppc_dens_overlay(pest_data_longer.complaints, yrep[1:200])
+```
+
+```julia
+ppc_stat_grouped(pest_data_longer.complaints, yrep, group=pest_data_longer.building_idx, stat="mean", binwidth=0.5)
+```
+
+```julia
+ppc_stat_grouped(pest_data_longer.complaints, yrep, group=pest_data_longer.building_idx, stat="sd", binwidth=0.5)
+```
+
+```julia
+ppc_intervals(pest_data_longer.complaints, yrep, x=pest_data_longer.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
+```
+
+```julia
+ppc_rootogram(pest_data_longer.complaints, yrep)
 ```

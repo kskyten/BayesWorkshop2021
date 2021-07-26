@@ -134,24 +134,8 @@ ggplot.ggplot(pest_data, ggplot.aes(x = :complaints)) + ggplot.geom_bar()
 ```
 
 ```julia
-ggplot.ggplot(pest_data, ggplot.aes(x = :traps, y = :complaints, color = :live_in_super == true)) + ggplot.geom_jitter()
+ggplot.ggplot(pest_data, ggplot.aes(x = :traps, y = :complaints, color = :live_in_super)) + ggplot.geom_jitter()
 ```
-
-```julia
-# R"""
-# library(ggplot2)
-# ggplot(pest_data, aes(x = date, y = complaints, color = live_in_super == TRUE)) +
-#   geom_line(aes(linetype = "Number of complaints")) +
-#   geom_point(color = "black") +
-#   geom_line(aes(y = traps, linetype = "Number of traps"), color = "black", size = 0.25) +
-#   facet_wrap(~building_id, scales = "free", ncol = 2, labeller = label_both) +
-#   scale_x_date(name = "Month", date_labels = "%b") +
-#   scale_y_continuous(name = "", limits = range(pest_data$complaints)) +
-#   scale_linetype_discrete(name = "") +
-#   scale_color_discrete(name = "Live-in super")
-# """
-```
-
 
 The first question we'll look at is just whether the number of complaints per
 building per month is associated with the number of bait stations per building
@@ -197,7 +181,7 @@ $$
 \end{align*}
 $$
 
-Let's encode this probability model in a Soss.
+Let's encode this model in Soss.
 
 ### Writing our first model
 
@@ -238,6 +222,7 @@ args = (
 
 fake_datas = rand.(simple_poisson(args) for x in 1:100)
 fake_data = first(fake_datas)
+fake_complaints = fake_data.complaints;
 ```
 
 ```julia
@@ -245,10 +230,6 @@ maximum(maximum(map(x -> x.complaints, fake_datas)))
 ```
 
 ### Fit the model to the fake data:
-
-In order to pass the fake data to our Stan program using RStan, we need to
-arrange the data into a named list. The names must match the names used
-in the `data` block of the Stan program.
 
 ```julia
 using SampleChainsDynamicHMC
@@ -270,18 +251,18 @@ large, but it looks at least _plausible_ ($\alpha$ and $\beta$ are contained
 within the histograms). If we did the simulation with many more observations the
 parameters would be estimated much more precisely.
 
-We should also check if the `y_rep` datasets (in-sample predictions) that we coded
-in the `generated quantities` block are similar to the `y` (complaints) values
-we conditioned on when fitting the model. (The **bayesplot**
-package [vignettes](http://mc-stan.org/bayesplot/articles/graphical-ppcs.html)
-are a good resource on this topic.)
-
-Here is a plot of the density estimate of the observed data compared to
-200 of the `y_rep` datasets:
+To get a better sense of the fit it's useful to compare the in-sample
+predictions with our observed data. The `posterior_predictive` from the first
+notebook is useful for generating the predictions. 
 
 ```julia
 yrep = posterior_predictive(simple_poisson, fake_post; traps=fake_traps)
 ```
+
+We can compare these predictions against our data visually using posterior
+predictive checking plots. These plots are implemented in the `bayesplot` R
+package and wrapped for Julia in `src/bayesplot.jl`. All of the posterior
+predictive checking plots have a name starting with `ppc`.
 
 ```julia
 ppc_dens_overlay(fake_complaints, yrep[1:200])
@@ -305,29 +286,18 @@ ppc_rootogram(fake_complaints, yrep[1:200])
 
 ### Fit with real data
 
-To fit the model to the actual observed data we'll first create a list to pass
-to Stan using the variables in the `pest_data` data frame:
-
 ```julia
 post = sample(simple_poisson(traps=pest_data.traps) | (complaints=pest_data.complaints,), dynamichmc())
 ```
+We can also plot the posterior distributions using ArviZ.jl
 
-and printing the parameters. What do these tell us?
-
-```r
-print(fit_P_real_data, pars = c('alpha','beta'))
-```
-
-We can also plot the posterior distributions:
-
-```r
-mcmc_hist(as.matrix(fit_P_real_data, pars = c('alpha','beta')))
+```julia
+#TODO
 ```
 
 As we expected, it appears the number of bait stations set in a building is
 associated with the number of complaints about cockroaches that were made in the
-following month. However, we still need to consider how well the model fits.
-
+following month. However, we still need to consider how well the model fits the data.
 
 ### Posterior predictive checking
 
@@ -348,11 +318,7 @@ Let's explore this further by looking directly at the proportion of zeros in the
 real data and predicted data.
 
 ```julia
-R"""
-prop_zero <- function(x) mean(x == 0)
-"""
-
-ppc_stat(pest_data.complaints, yrep, stat = "prop_zero")
+ppc_stat(pest_data.complaints, yrep, stat = R"function(x) mean(x == 0)")
 ```
 
 The plot above shows the observed proportion of zeros (thick vertical line) and
@@ -361,10 +327,13 @@ clear that the model does not capture this feature of the data well at all.
 
 This next plot is a plot of the standardised residuals of the observed vs predicted number of complaints.
 
-```r
-mean_y_rep <- colMeans(y_rep)
-std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep)
-qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+```julia
+# Convert into a matrix of size `(num_variables, num_samples)`
+yrep_matrix = mapreduce(hcat, yrep) do y
+    y.complaints
+end;
+
+qqnorm(dropdims(mean(yrep_matrix; dims=2); dims=2), qqline=:R)
 ```
 
 As you can see here, it looks as though we have more positive residuals than negative,

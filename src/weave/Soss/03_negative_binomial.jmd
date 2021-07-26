@@ -47,9 +47,9 @@ multiple_NB_regression = @model (traps, live_in_super, log_sq_foot) begin
     inv_phi ~ HalfNormal(1)
 
     complaints ~ For(eachindex(traps)) do i
-        logλ = alpha + beta * traps[i] + beta_super * live_in_super[i] + log_sq_foot[i]
+        λ = exp(alpha + beta * traps[i] + beta_super * live_in_super[i] + log_sq_foot[i])
         r = inv(inv_phi)
-        NegativeBinomial(;r, logλ)
+        NegativeBinomial(;r, λ)
     end
 end
 ```
@@ -75,19 +75,27 @@ using SampleChainsDynamicHMC
 fake_post = sample(multiple_NB_regression(fake_obs) | (complaints=fake_data.complaints,), dynamichmc())
 ```
 ```julia
-mcmc_recover_hist(fake_post, (alpha = fake_data.alpha,
-    beta = fake_data.beta,
-    beta_super = fake_data.beta_super,
-    inv_phi = fake_data.inv_phi))
+mcmc_recover_hist(
+    fake_post,
+    (
+        alpha = fake_data.alpha,
+        beta = fake_data.beta,
+        beta_super = fake_data.beta_super,
+        inv_phi = fake_data.inv_phi
+    )
+)
 ```
 
 ### Fit to real data and check the fit
 
 ```julia
+# Add the `log_sq_foot` as in 02.
+transform!(pest_data, :total_sq_foot => ByRow(total_sq_foot -> log(total_sq_foot / 1e4)) => :log_sq_foot)
+
 obs = (
     traps = pest_data.traps,
     live_in_super = pest_data.live_in_super,
-    log_sq_foot = log.(pest_data.sq_footage_p_floor)
+    log_sq_foot = pest_data.log_sq_foot
 )
 post = sample(multiple_NB_regression(obs) | (complaints=pest_data.complaints,), dynamichmc())
 ```
@@ -110,24 +118,18 @@ Let's check if the negative binomial model does a better job capturing the numbe
 using RCall
 ggplot = rimport("ggplot2")
 
-R"""
-prop_zero <- function(x) mean(x == 0)
-"""
-
-ppc_stat(pest_data.complaints, yrep, stat = "prop_zero", binwidth = 0.01)
+ppc_stat(pest_data.complaints, yrep, stat = R"function(x) mean(x == 0)", binwidth = 0.01)
 ```
 
 These look OK, but let's look at the standardized residual plot.
 
 ```julia
+# Convert into a matrix of size `(num_variables, num_samples)`
+yrep_matrix = mapreduce(hcat, yrep) do y
+    y.complaints
+end;
 
-R"""
-mean_inv_phi <- mean(samps_NB$inv_phi)
-mean_y_rep <- colMeans(y_rep)
-std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
-qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
-"""
-
+qqnorm(dropdims(mean(yrep_matrix; dims=2); dims=2), qqline=:R)
 ```
 
 Looks OK, but we still have some very large *standardized* residuals. This might be because we are currently ignoring that the data are clustered by buildings, and that the probability of roach issue may vary substantially across buildings.
@@ -147,17 +149,13 @@ ppc_intervals(pest_data.complaints, yrep, x = pest_data.traps) + ggplot.labs(x =
 We haven't used the fact that the data are clustered by building yet. A posterior  predictive check might elucidate whether it would be a good idea to add the building information into the model.
 
 ```julia
-
-R"""
 ppc_stat_grouped(
-  y = stan_dat_simple$complaints,
-  yrep = y_rep,
-  group = pest_data$building_id,
-  stat = 'mean',
+  pest_data.complaints,
+  yrep,
+  group = pest_data.building_id,
+  stat = "mean",
   binwidth = 0.2
 )
-"""
-
 ```
 
 We're getting plausible predictions for most building means but some are estimated better than others and some have larger uncertainties than we might expect. If we explicitly model the variation across buildings we may be able to get much better estimates.

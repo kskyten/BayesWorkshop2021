@@ -38,23 +38,25 @@ A quick test shows us that there appears to be a relationship between the square
 footage of the building and the number of complaints received:
 
 ```julia
+using RCall
+using StatsFuns
 
-# R"""
-# ggplot(pest_data, aes(x = log(total_sq_foot), y = log1p(complaints))) +
-#   geom_point() +
-#   geom_smooth(method = "lm", se = FALSE)
-# """
-
+ggplot = rimport("ggplot2")
+ggplot.ggplot(
+    select(
+        pest_data,
+        :complaints => ByRow(StatsFuns.log1p),
+        :total_sq_foot => ByRow(log),
+        renamecols=false
+    ),
+    ggplot.aes(x = :complaints, y = :total_sq_foot)
+) + ggplot.geom_point() + ggplot.geom_smooth(method = "lm", se = false)
 ```
 
 Using the property manager's intuition, we include two extra pieces of information we know about the building - the (log of the) square floor space and whether there is a live in super or not - into both the simulated and real data.
 
 ```julia
-
-# R"""
-# stan_dat_simple$log_sq_foot <- log(pest_data$total_sq_foot/1e4)
-# stan_dat_simple$live_in_super <- pest_data$live_in_super
-# """
+transform!(pest_data, :total_sq_foot => ByRow(total_sq_foot -> log(total_sq_foot / 1e4)) => :log_sq_foot)
 ```
 
 ### Simulate fake data with multiple predictors
@@ -99,9 +101,14 @@ using SampleChainsDynamicHMC
 fake_post = sample(multiple_poisson_regression(fake_obs) | (complaints=fake_data.complaints,), dynamichmc())
 ```
 ```julia
-mcmc_recover_hist(fake_post, (alpha = fake_data.alpha,
-    beta = fake_data.beta,
-    beta_super = fake_data.beta_super))
+mcmc_recover_hist(
+    fake_post,
+    (
+        alpha = fake_data.alpha,
+        beta = fake_data.beta,
+        beta_super = fake_data.beta_super
+    )
+)
 ```
 
 We've recovered the parameters sufficiently well, so we've probably coded the model correctly and we're ready to fit the real data.
@@ -114,7 +121,7 @@ Now let's use the real data and explore the fit.
 obs = (
     traps = pest_data.traps,
     live_in_super = pest_data.live_in_super,
-    log_sq_foot = log.(pest_data.sq_footage_p_floor)
+    log_sq_foot = pest_data.log_sq_foot
 )
 post = sample(multiple_poisson_regression(obs) | (complaints=pest_data.complaints,), dynamichmc())
 ```
@@ -130,9 +137,6 @@ ppc_dens_overlay(pest_data.complaints, yrep[1:200])
 This again looks like we haven't captured the smaller counts very well, nor have we captured the larger counts.
 
 ```julia
-using RCall
-ggplot = rimport("ggplot2")
-
 R"""
 prop_zero <- function(x) mean(x == 0)
 """
