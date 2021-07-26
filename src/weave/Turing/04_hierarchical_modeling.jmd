@@ -140,10 +140,19 @@ Looks as if the divergent parameters, the little black bars underneath the trace
 plot_trace(idata, var_names=["sigma_mu"])
 ```
 
-And we can look at the joint distribution with one of the means:
+And we can look at the joint distribution of `sigma_mu` with one of the means:
 
 ```julia
-corner(post, [:sigma_mu, Symbol("mu[4]")])
+let
+    df = transform(
+        DataFrame(post[[:sigma_mu, Symbol("mu[4]")]]),
+        :sigma_mu => ByRow(log) => :log_sigma_mu,
+        # `StatsPlots.@df` isn't to happy about `Symbol(...)`, so we
+        # just rename it to `:mu4`.
+        Symbol("mu[4]") => identity => :mu4
+    )
+    @df df cornerplot([:log_sigma_mu :mu4], compact=true)
+end
 ```
 
 What we have here is a cloud-like shape, with most of the divergences clustering towards the bottom. We'll see a bit later that we actually want this to look more like a funnel than a cloud, but the divergences are indicating that the sampler can't explore the narrowing neck of the funnel.
@@ -220,6 +229,32 @@ idata_ncp = to_arviz(
     hier_NB_regression_ncp(; obs..., complaints=pest_data.complaints), # conditioned model
     post_ncp # posterior samples
 )
+```
+
+```julia
+# Now that `mu` isn't on the LHS of a `~` anymore, it won't be present in
+# the resulting chain. Instead we need to extract it using `generated_quantities`:
+generated = generated_quantities(
+    hier_NB_regression_ncp(; obs..., complaints=pest_data.complaints),
+    MCMCChains.get_sections(post_ncp, :parameters)
+);
+
+let
+    # Extract `mu[4]` from `generated`.
+    mu4 = mapreduce(vcat, generated) do g
+        g.mu[4]
+    end
+
+    # Construct the `DataFrame`.
+    df = select(
+        DataFrame(post_ncp[[:sigma_mu]]),
+        :sigma_mu => ByRow(log) => :log_sigma_mu,
+    )
+    # Add `mu[4]` to the `DataFrame.`
+    df = DataFrame(:log_sigma_mu => df.log_sigma_mu, :mu4 => mu4)
+    # Plot!
+    @df df cornerplot([:log_sigma_mu :mu4], compact=true)
+end
 ```
 
 ```julia
