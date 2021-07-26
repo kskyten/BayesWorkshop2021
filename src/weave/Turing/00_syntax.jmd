@@ -8,37 +8,93 @@ To get a proper introduction to Turing.jl, its syntax and everything surrounding
 
 Turing syntax is designed to closely resemble the typical mathematical notation for Bayesian models.
 
-## Template for defining Turing models
+## Model definition
 
-A Turing model is defined by using the model macro.
+### `@model`
+
+A Turing model is defined by using the model macro as follows:
 
 ```julia
-@model function name_of_the_model(y; sigma=1.0)
-    # Define your model here.
-    sigma ~ InverseGamma(2, 3)
-    x ~ Normal(0, sigma)
+using Turing
 
-    y ~ MvNormal(x, I)
+@model function demo(y; σ²=1.0)
+    n=length(y)
+
+    σ² ~ InverseGamma(2, 3)
+    σ = √σ²
+    x ~ Normal(0, σ)
+
+    y ~ MvNormal(x * ones(n), 1.0)
 end
 ```
 
-Note that arguments are `missing`, e.g. if we instead set `sigma=missing`, `sigma` would be considered a random variable to be sampled and/or inferred rather than something to observe on (as we do in the above).
+where the right-hand side of `~` is expected to be a `Distribution` from [Distributions.jl](https://github.com/JuliaStats/Distributions.jl).
 
-A Turing model is then instantiated with some data, e.g. `name_of_the_model(randn(10))`, to condition it.
+Notice that there's seemingly nothing special about the body of the function above, with the exception of the `~` statements! In fact, _any_ Julia code can go into a Turing model, e.g. [solving differential equations](https://turing.ml/dev/tutorials/10-bayesian-differential-equations/)! 
 
-## Univariate random variables
+All that `@model` does is to replace the `~` statements with some function calls and it adds some additional arguments to the function that Turing uses internally to keep track of everything. If you're very keen on understanding some of its internals, check out [https://turing.ml/dev/docs/for-developers/compiler](https://turing.ml/dev/docs/for-developers/compiler).
 
-The typical notation $X \sim Normal(\mu, \sigma)$, translates directly to Turing. The objects on the right hand side must implement a `Distributions.rand` and `Distributions.logpdf`.
-
-## Independent and identically distributed random variables
-
-It is common to assume that a collection of random variables are independent and identically distributed. This is commonly abbreviated as iid. In Turing, we declare the iid assumption by simply using `.~` instead of `~`. For example, we could assume 10 iid standard Normal random variables using the statement
+A Turing model is then instantiated with some data, e.g. `demo(randn(10))`, to condition the model on said data:
 
 ```julia
-x .~ Normal(0, 1)
+m = demo(ones(10));
 ```
 
-where `x` is a `Vector` of length `10`. Note that if you want to sample `x` this way, you need to allocate a container where we can put the values (see below). Or you can just use a for-loop:
+To sample from the `Model` we simply call it:
+
+```julia
+m()
+```
+
+Note how the observations was returned back to us for the model call. This is not because Turing has some feature that it always returns the observations or anything, no no no, it's simply that `y ~ ...` was the last statement in the model, hence it was returned. This is exactly the same behavior as a standard Julia function! Often one might want to make the return value something different, e.g.
+
+```julia
+@model function demo(y; σ²=1.0)
+    n = length(y)
+
+    σ² ~ InverseGamma(2, 3)
+    σ = √σ²
+    x ~ Normal(0, σ)
+
+    y ~ MvNormal(x * ones(n), 1.0)
+
+    return (; σ, x, y, whatever=100 .* y)
+end
+
+m = demo(ones(10));
+m()
+```
+
+This can be extremely useful for debugging but also if there are certain quantities one might want to compute from the model. As we'll see later, there's a `generated_quantities` function that allows you to get the return-values of the model _conditioned_ on posterior samples.
+
+### Usage of `missing`: sampling observations
+
+We can also instantiate `demo` _without_ any observations by simply setting `y` to `missing`, and in Turing a `missing` variable is considered as a random variable to be sampled rather than an observation. 
+
+But note when we do this for the above `demo` model, the default `n = length(y)` doesn't make sense anymore since `length(::Missing)` isn't defined, i.e. we need to specify the length of the variable `y` when it's `missing`:
+
+```julia
+# If `y` is not an array, we default to using `n=1`.
+@model function demo(y; σ²=1.0, n = y isa AbstractArray ? length(y) : 1)
+    σ² ~ InverseGamma(2, 3)
+    σ = √σ²
+    x ~ Normal(0, σ)
+
+    y ~ MvNormal(x * ones(n), 1.0)
+
+    return (; σ, x, y, whatever=100 .* y)
+end
+
+m = demo(missing, n=10)
+m()
+```
+
+We can do the same for the keyword argument `σ²`:
+
+```julia
+m = demo(missing; σ² = missing, n=10)
+m()
+```
 
 ## Loops
 
@@ -65,4 +121,85 @@ end
 ```
 
 but this would lead to type-unstable code and hence a loss in performance.
+
+## Broadcasted statements, i.e. `.~`
+
+In Turing you can also use the broadcasted version of `~` where the semantics are the same as the broadcasting behavior in Julia, e.g.
+
+```julia
+x .~ Normal(0, 1)
+```
+
+and
+
+```julia
+for i in eachindex(x)
+    x[i] ~ Normal(0, 1)
+end
+```
+
+are equivalent. Similarly, if `μ` is a vector, the following are equivalent
+
+```julia
+x .~ Normal.(μ, 1)
+```
+
+and
+
+```julia
+for i in eachindex(x)
+    x[i] ~ Normal(μ[i], 1)
+end
+```
+
+Note that one can also use the `@. expr...` macro from Julia which tells Turing to broadcast everything following `@.`, i.e. the following is equivalent to the above snippets:
+
+```julia
+@. x ~ Normal(μ, 1)
+```
+
+This is something we'll use repeatedly throughout as, amongst other things, `.~` provides a convenient way of expressing a `Vector` of IID samples.
+
+### Sampling with `.~`
+
+One drawback with the `x .~ dist` is that it requires the left-hand side `x` to be defined, i.e. `x` either needs to be part of the arguments to the model and is thus considered an observation (unless it's `missing`), _or_ we need to allocate an `Array` to hold the result similar to what we did for for-loops earlier. Therefore we'll often see the following piece of code being used throughout
+
+```julia
+@model function demo(n; x=missing)
+    # If `x` is `missing`, we consider it as a random variable to be sampled.
+    if x === missing
+        # Since trying to do `x[i] ~ ...` doesn't make sense when `x === missing`
+        # we need to replace `x` with an `Array` that can hold the results.
+        x = Vector(undef, n)
+    end
+
+    x .~ Normal()
+end
+```
+
+As mentioned above in the section on for-loops, `Vector(undef, n)` will be type-unstable, and so the above should really be written
+
+```julia
+@model function demo(n, ::Type{T}; x=missing) where {T}
+    # If `x` is `missing`, we consider it as a random variable to be sampled.
+    if x === missing
+        # Since trying to do `x[i] ~ ...` doesn't make sense when `x === missing`
+        # we need to replace `x` with an `Array` that can hold the results.
+        x = Vector{T}(undef, n)
+    end
+
+    x .~ Normal()
+end
+```
+
+for optimal performance.
+
+We can also make the statement a bit more compact:
+
+```julia
+@model function demo(n, ::Type{T}; x=missing) where {T}
+    x = x === missing ? Vector{T}(undef, n) : x
+    x .~ Normal()
+end
+```
 

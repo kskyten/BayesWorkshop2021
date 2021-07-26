@@ -73,8 +73,8 @@ end
     beta ~ Normal(-0.25, 1) # coefficient on traps
     inv_phi ~ HalfNormal() # 1/phi (easier to think about prior for 1/phi instead of phi)
 
-    # TODO: Implement prior for `mu`
-    mu ~ ...
+    mu ~ MvNormal(alpha .+ building_data * zeta, sigma_mu)
+
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
@@ -347,10 +347,9 @@ Fit the model to data and extract the posterior draws needed for our posterior p
 @model function hier_NB_regression_ncp_slopes(; traps, log_sq_foot, building_idx, building_data, complaints)
     J, K = size(building_data)
 
-    # TODO: Implement
-    kappa_raw ~ ...
-    sigma_kappa ~ ...
-    gamma ~ ...
+    kappa_raw ~ filldist(Normal(), J)
+    sigma_kappa ~ HalfNormal()
+    gamma ~ filldist(Normal(), K)
 
     sigma_mu ~ HalfNormal()
     alpha ~ Normal(log(4), 1)
@@ -360,8 +359,7 @@ Fit the model to data and extract the posterior draws needed for our posterior p
     mu_raw ~ filldist(Normal(), J)
 
     mu  = alpha .+ building_data * zeta .+ sigma_mu * mu_raw
-    # TODO Implement
-    kappa = ...
+    kappa = beta .+ building_data * gamma .+ sigma_kappa * kappa_raw;
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints

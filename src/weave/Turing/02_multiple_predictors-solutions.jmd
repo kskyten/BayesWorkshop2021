@@ -68,14 +68,13 @@ And then fit the model we wrote for the multiple regression.
 using Turing
 
 @model function multiple_poisson_regression(; traps, live_in_super, log_sq_foot, complaints=missing)
-    # TODO: Implement the prior!
-    ...
+    beta ~ Normal(-0.25, 1)
+    beta_super ~ Normal(-0.5, 1)
+    alpha ~ Normal(log(4), 1)
 
     # Allocate if we're going to sample.
     complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
-    # TODO: Implement the log-linear model in place of `...`
-    @. complaints ~ Poisson(exp(...))
-
+    @. complaints ~ Poisson(exp(alpha + beta * traps + beta_super * live_in_super + log_sq_foot))
     return (; alpha, beta, beta_super, complaints)
 end
 ```
