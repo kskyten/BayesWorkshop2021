@@ -1,0 +1,156 @@
+```julia; echo=false; results="hidden"
+using DrWatson
+@quickactivate "BayesWorkshop2021"
+include(joinpath(srcdir(), "setup.jl"));
+```
+## Expanding the model: multiple predictors
+
+Modeling the relationship between complaints and bait stations is the simplest  model. We can expand the model, however, in a few ways that will be beneficial  for our client. Moreover, the manager has told us that they expect there are a number of other reasons that one building might have more roach complaints than another.
+
+### Interpretability
+
+Currently, our model's mean parameter is a rate of complaints per 30 days, but
+we're modeling a process that occurs over an area as well as over time. We have
+the square footage of each building, so if we add that information into the
+model, we can interpret our parameters as a rate of complaints per square foot
+per 30 days.
+
+$$
+\begin{align*}
+\textrm{complaints}_{b,t} & \sim \textrm{Poisson}(\textrm{sq_foot}_b\,\lambda_{b,t}) \\
+\lambda_{b,t} & = \exp{(\eta_{b,t} )} \\
+\eta_{b,t} &= \alpha + \beta \, \textrm{traps}_{b,t}
+\end{align*}
+$$
+
+The term $\text{sq_foot}$ is called an exposure term. If we log the term, we can 
+put it in $\eta_{b,t}$:
+
+$$
+\begin{align*}
+\textrm{complaints}_{b,t} & \sim \textrm{Poisson}(\lambda_{b,t}) \\
+\lambda_{b,t} & = \exp{(\eta_{b,t} )} \\
+\eta_{b,t} &= \alpha + \beta \, \textrm{traps}_{b,t} + \textrm{log_sq_foot}_b
+\end{align*}
+$$
+
+A quick test shows us that there appears to be a relationship between the square
+footage of the building and the number of complaints received:
+
+```julia
+using RCall
+using StatsFuns
+
+ggplot = rimport("ggplot2")
+ggplot.ggplot(
+    select(
+        pest_data,
+        :complaints => ByRow(StatsFuns.log1p),
+        :total_sq_foot => ByRow(log),
+        renamecols=false
+    ),
+    ggplot.aes(x = :complaints, y = :total_sq_foot)
+) + ggplot.geom_point() + ggplot.geom_smooth(method = "lm", se = false)
+```
+
+Using the property manager's intuition, we include two extra pieces of information we know about the building - the (log of the) square floor space and whether there is a live in super or not - into both the simulated and real data.
+
+```julia
+transform!(pest_data, :total_sq_foot => ByRow(total_sq_foot -> log(total_sq_foot / 1e4)) => :log_sq_foot)
+```
+
+### Simulate fake data with multiple predictors
+
+
+And then fit the model we wrote for the multiple regression.
+
+```julia
+using Turing
+
+@model function multiple_poisson_regression(; traps, live_in_super, log_sq_foot, complaints=missing)
+    beta ~ Normal(-0.25, 1)
+    beta_super ~ Normal(-0.5, 1)
+    alpha ~ Normal(log(4), 1)
+
+    # Allocate if we're going to sample.
+    complaints = complaints === missing ? Vector{Int}(undef, length(traps)) : complaints
+    @. complaints ~ Poisson(exp(alpha + beta * traps + beta_super * live_in_super + log_sq_foot))
+    return (; alpha, beta, beta_super, complaints)
+end
+```
+
+Again we'll generate some samples from the prior to get a better sense of what asusmptions we've actually encoded in the model:
+
+```julia
+N = size(pest_data, 1)
+mean_traps = mean(pest_data.traps)
+fake_traps = rand(filldist(Poisson(mean_traps), N))
+fake_obs = (
+    traps = fake_traps,
+    live_in_super = rand(filldist(Bernoulli(0.5), N)),
+    log_sq_foot = rand(filldist(Normal(1.5, 0.1), N)),
+)
+```
+
+```julia
+fake_data = multiple_poisson_regression(; fake_obs...)()
+```
+
+Then compare these parameters to the true parameters:
+
+```julia
+fake_post = sample(multiple_poisson_regression(; fake_obs..., complaints=fake_data.complaints), NUTS(), 1_000);
+```
+```julia
+mcmc_recover_hist(
+    fake_post,
+    (
+        alpha = fake_data.alpha,
+        beta = fake_data.beta,
+        beta_super = fake_data.beta_super
+    )
+)
+```
+
+We've recovered the parameters sufficiently well, so we've probably coded the model correctly and we're ready to fit the real data.
+
+### Fit the real data
+
+Now let's use the real data and explore the fit.
+
+```julia
+obs = (
+    traps = pest_data.traps,
+    live_in_super = pest_data.live_in_super,
+    log_sq_foot = pest_data.log_sq_foot
+)
+post = sample(multiple_poisson_regression(; obs..., complaints=pest_data.complaints), NUTS(), 1_000);
+```
+
+```julia
+yrep = posterior_predictive(multiple_poisson_regression(; obs...), post)
+```
+
+```julia
+ppc_dens_overlay(pest_data.complaints, yrep[1:200])
+```
+
+This again looks like we haven't captured the smaller counts very well, nor have we captured the larger counts.
+
+```julia
+R"""
+prop_zero <- function(x) mean(x == 0)
+"""
+
+ppc_stat(pest_data.complaints, yrep, stat = "prop_zero", binwidth = 0.01)
+```
+
+We're still severely underestimating the proportion of zeros in the data. Ideally this vertical line would fall somewhere within the histogram.
+
+We can also plot uncertainty intervals for the predicted complaints for different numbers of traps.
+
+```julia
+ppc_intervals(pest_data.complaints, yrep, x = pest_data.traps) + ggplot.labs(x = "Number of traps", y = "Number of complaints")
+```
+
+We can see that we've increased the tails a bit more at the larger numbers of traps but we still have some large observed numbers of complaints that the model would consider extremely unlikely events.
