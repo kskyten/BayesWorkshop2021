@@ -451,10 +451,6 @@ plot(post_ncp_slopes[[:beta]])
 While the model can't specifically rule out zero from the posterior, it does have mass at small non-zero numbers, so we should leave in the hierarchy over $\texttt{kappa}$. Plotting the marginal data density again, we can see the model still looks well calibrated.
 
 ```julia
-generated_quantities(hier_NB_regression_ncp_slopes(; obs...), MCMCChains.get_sections(post_ncp_slopes, :parameters))
-```
-
-```julia
 yrep = posterior_predictive(hier_NB_regression_ncp_slopes(; obs...), post_ncp_slopes)
 ```
 
